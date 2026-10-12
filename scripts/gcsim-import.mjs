@@ -21,20 +21,33 @@
 //   row's note records what gcsim actually rolled, so a mismatch is visible and
 //   auditable rather than hidden.
 //
-//   The NUMBERS are NOT gcsim's yet. gcsim's damage depends on the buff stack,
-//   the artifact rolls and the talent passives that were live at that frame, and
-//   this pass rebuilds only the team's identity (character, weapon, level,
-//   constellation, talent LEVELS) plus the artifact SETS. Two things are
-//   deliberately left out, because guessing them would be worse than leaving a
-//   hole (the codebase's rule: a wrong number is worse than an empty field):
+//   The NUMBERS are rebuilt as far as the export allows, in two parts.
 //
-//     - artifact stat VALUES. `add stats` is a flat aggregate, and the model
-//       stores five slots of legal rolls; splitting the aggregate back into rolls
-//       would fabricate piece values that never existed.
-//     - buffs. gcsim applies them frame by frame.
+//   The PANEL comes back from `character_details[i].stats`, which is the
+//   `add stats` aggregate the run was given, in gcsim's own 25-slot attribute
+//   order. Every non-zero entry is written into the character's artifact slots
+//   as ONE substat row carrying the whole total (see `artifactSlots`): the same
+//   number gcsim used, with no claim that the pieces were split into real rolls.
+//   Inventing rolls nobody made is the one thing this importer must not do, and
+//   a single row carries the total without inventing anything.
 //
-//   So the rows render, the rotation is right, and the panel alignment is the
-//   next step. `--report` prints exactly which numbers came from gcsim.
+//   The BUFFS come from the LOG ITSELF, row by row. Every `damage` event lists
+//   the statuses that were live for THAT hit (`varka-c6-cdmg`, `celestialgift-*`,
+//   `vvpyro`...), with the values they applied at that moment. A row therefore
+//   gets exactly the cards its own hits had, at the sample's numbers -- a
+//   self-buff that only reached 法尔伽 never lands on 杜林's rows, because 杜林's
+//   hits do not carry the status. `public/data/gcsim-abilities.json`'s `buffs`
+//   table is the human-auditable status -> local-source mapping, and the only
+//   place a status is interpreted: a status the table does not name, a stat line
+//   it cannot read, or a source the team does not have is REPORTED, never
+//   silently dropped.
+//
+//   Constellation/passive damage IS mapped: those rows do not exist on the
+//   character's talent table at all, they come from the curated
+//   public/data/talent-damage.json, which is passed to `buildSources` here.
+//
+//   `--report` prints which numbers came from gcsim, which artifact stats the
+//   app has nowhere to put, and which buff cards were attached.
 //
 // USAGE
 //   node scripts/gcsim-import.mjs [--sample <file>] [--out <file>]
@@ -44,7 +57,8 @@
 //   --sample     the gcsim export (zlib OR gzip OR plain JSON). Default
 //                scratch/_gcsim_serve_sample.json
 //   --out        where to write the config. Default data/gcsim-config.json
-//   --abilities  the name->row table. Default public/data/gcsim-abilities.json
+//   --abilities  the name -> row table AND the status -> source table. Default
+//                public/data/gcsim-abilities.json
 //   --team       take the team from an existing config file instead of rebuilding
 //                it (escape hatch; the axis is unaffected)
 //   --report     also write the JSON audit report here
@@ -58,6 +72,11 @@ import { register } from 'node:module';
 // bundler's resolution to find them. Registering the checks' resolver here keeps
 // the importer runnable with a plain `node scripts/gcsim-import.mjs`.
 register(new URL('../tests/resolve-js.mjs', import.meta.url));
+// `src/lib/buff-sources.js` reaches `components/BuffCard.jsx` for the one table
+// that names a source kind. Registering the JSX loader as well is what lets the
+// SAME source-building code run here instead of this script growing a second
+// copy of it -- two copies of that table is the drift the module warns about.
+register(new URL('../tests/jsx-loader.mjs', import.meta.url));
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -65,7 +84,8 @@ import { gunzipSync, inflateSync } from 'node:zlib';
 import { pathToFileURL } from 'node:url';
 
 const { buildSources } = await import('../src/char-sources.js');
-const { SLOT_KEYS, blankPiece } = await import('../src/lib/artifact-model.js');
+const { SLOT_KEYS, SUB_COUNT, blankPiece, mainStatValue } = await import('../src/lib/artifact-model.js');
+const { buildUnitSources } = await import('../src/lib/buff-sources.js');
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const arg = (name, fallback) => {
@@ -133,12 +153,23 @@ function findStage(source, stageName) {
  * @param {object} input.mapping     public/data/gcsim-abilities.json
  * @param {object} input.catalogues  { char, weapon, artifact } lists
  * @param {object} input.charData    charId -> the parsed char detail file
+ * @param {object} input.talentDamage  public/data/talent-damage.json (may be null)
  * @param {object} [input.team]      a team to use verbatim (escape hatch)
+ * @param {object} [input.library]   the parsed buff library (`{ version, entries }`)
+ * @param {object} [input.flags]     that library's "is this a buff" marks
+ * @param {object} [input.setBonuses] setId -> an artifact set's bonuses, which
+ *                                    `buildUnitSources` needs to name the 2/4pc
+ *                                    sources it offers
  */
-export function importGcsim({ sample, mapping, catalogues, charData, team = null }) {
+export function importGcsim({
+  sample, mapping, catalogues, charData, talentDamage = null, team = null,
+  setBonuses = null,
+}) {
   const details = sample.character_details || [];
   const abilities = mapping.abilities || {};
   const ignored = mapping.ignored || {};
+  const buffTable = mapping.buffs || {};
+  const extraSources = mapping.extraSources || {};
 
   // gcsim char -> local id, once, up front: an unresolvable character makes the
   // whole run meaningless, so it throws rather than dropping every hit.
@@ -174,8 +205,40 @@ export function importGcsim({ sample, mapping, catalogues, charData, team = null
     const data = charData[id];
     if (!data) throw new Error(`缺少角色数据文件 public/data/char/chs/${id}.json`);
     const element = detail.element ? detail.element[0].toUpperCase() + detail.element.slice(1) : null;
-    sources[index] = buildSources(data, element, null, id, levelsFor(detail));
+    sources[index] = buildSources(data, element, talentDamage, id, levelsFor(detail));
   }
+
+  /**
+   * THE TEAM IS BUILT BEFORE THE LOG IS WALKED, not after.
+   *
+   * A row's cards are looked up by the LOCAL SOURCE its statuses name, so the
+   * team's own source list has to exist before the first row does. Building it
+   * here rather than beside the report also collects the artifact
+   * reconstruction's `notes` in the same pass.
+   */
+  const statNotes = [];
+  const teamOut = team || buildTeam({ idFor, catalogues, mapping, notes: statNotes });
+  const sourcesByKey = teamSources(teamOut, { catalogue: catalogues, charData, setBonuses });
+  const sourceOf = (key) => {
+    const known = sourcesByKey.get(key);
+    if (known) return known;
+    // A source that belongs to no unit -- a party resonance has nobody to be
+    // built from -- so the table names it directly.
+    const extra = extraSources[key];
+    return extra ? { icon: null, iconKind: null, ...extra, libKey: key } : null;
+  };
+
+  // Everything a card could not be built from, and how far each card reached.
+  // Both halves are the report: nothing a row needed is allowed to vanish.
+  const buffNotes = [];
+  const buffNoteSeen = new Set();
+  const pushBuffNote = (n) => {
+    const id = JSON.stringify(n);
+    if (buffNoteSeen.has(id)) return;
+    buffNoteSeen.add(id);
+    buffNotes.push(n);
+  };
+  const cardCount = new Map();
 
   const enemyLevel = sample.target_details?.[0]?.level ?? null;
 
@@ -199,7 +262,7 @@ export function importGcsim({ sample, mapping, catalogues, charData, team = null
   let run = null;
   const flush = () => {
     if (!run) return;
-    const { ci, ability, hits, total, critAll, critNone, ele } = run;
+    const { ci, ability, hits, total, critAll, critNone, ele, buffs } = run;
     run = null;
 
     const cd = details[ci];
@@ -223,11 +286,21 @@ export function importGcsim({ sample, mapping, catalogues, charData, team = null
       ...src,
       stages: src.stages.map((st, i) => (i === stageIndex ? { ...st, hits } : st)),
     };
+    // THE ROW'S OWN CARDS. Grouped by source, so two statuses naming one source
+    // (法尔伽's a1-anemo and a1-pyro are both p1) become one card holding both.
+    const cards = rowDrops([...buffs.values()], sourceOf, pushBuffNote);
+    for (const c of cards) {
+      const rec = cardCount.get(c.source.libKey)
+        || { libKey: c.source.libKey, kind: c.source.kind, name: c.source.name, rows: 0, hits: 0 };
+      rec.rows += 1;
+      rec.hits += hits;
+      cardCount.set(c.source.libKey, rec);
+    }
     entries.push({
       id: nextId(),
       charId: idFor[ci].id,
       element: ele ? ele[0].toUpperCase() + ele.slice(1) : null,
-      drops: [],
+      drops: cards,
       statOverrides: enemyLevel != null ? { enemyLevel } : {},
       critMode: critAll ? 'crit' : critNone ? 'never' : 'avg',
       picked: { sourceKey: mapped.source, stageIndex },
@@ -241,12 +314,46 @@ export function importGcsim({ sample, mapping, catalogues, charData, team = null
     const ci = event.char_index;
     if (!run || run.ci !== ci || run.ability !== L.abil) {
       flush();
-      run = { ci, ability: L.abil, hits: 0, total: 0, critAll: true, critNone: true, ele: L.ele };
+      run = {
+        ci, ability: L.abil, hits: 0, total: 0, critAll: true, critNone: true,
+        ele: L.ele, buffs: new Map(),
+      };
     }
     run.hits += 1;
     run.total += Number(L.damage) || 0;
     run.critAll = run.critAll && Boolean(L.crit);
     run.critNone = run.critNone && !L.crit;
+
+    // THE CARDS ARE THE HIT'S OWN. Each status the log lists for this hit was
+    // live for it, so a row collects exactly what its hits had.
+    for (const [name, raw] of Object.entries(L)) {
+      if (HIT_KEYS.has(name)) continue;
+      if (!buffTable[name]) {
+        pushBuffNote({ kind: 'buff-status-unknown', status: name, ability: L.abil });
+        continue;
+      }
+      for (const p of statusLines(name, raw, buffTable, pushBuffNote)) {
+        // Deduped BY STATUS, not just by source+stat. A status listed on several
+        // hits of one row is ONE mod, but two DIFFERENT statuses that name the
+        // same source and the same field (尼可's Grace of Kenosis and Guidance
+        // of Theosis are both p1 and BOTH add flat ATK -- the second is "an
+        // additional 300") genuinely stack, and collapsing them would understate
+        // the row by 300 ATK.
+        const id = `${name}\u0000${p.source}\u0000${p.key}`;
+        const prev = run.buffs.get(id);
+        if (prev && prev.value !== p.value) {
+          // Never happens on the sample this was built against (a merged run
+          // sits inside one buff state), but if it ever did the row must not
+          // quietly pick one: the FIRST wins and the drift is reported.
+          pushBuffNote({
+            kind: 'buff-value-drift', status: name, source: p.source, key: p.key,
+            from: prev.value, to: p.value, ability: L.abil,
+          });
+          continue;
+        }
+        run.buffs.set(id, p);
+      }
+    }
   }
   flush();
 
@@ -260,9 +367,14 @@ export function importGcsim({ sample, mapping, catalogues, charData, team = null
     ignoredHits,
     unmappedHits: damage.length - mappedHits - ignoredHits,
     byAbility: rows.sort((a, b) => b.hits - a.hits),
+    // What the rows were given beyond the axis itself: the panel, and the cards.
+    statNotes,
+    buffs: {
+      cards: [...cardCount.values()].sort((a, b) => b.hits - a.hits),
+      notes: buffNotes,
+    },
   };
 
-  const teamOut = team || buildTeam({ idFor, catalogues, mapping });
   const doc = {
     kind: 'lunaris-config',
     version: 1,
@@ -287,30 +399,17 @@ const fmt = (n) => Number(n).toLocaleString('en-US', { maximumFractionDigits: 2,
 /**
  * The team, rebuilt from the sample's own `character_details`.
  *
- * Artifacts are carried as the SETS only (which is what the planner's 2/4-piece
- * buff pool reads) with the slot stats left blank -- see the file header for why
- * the flat `add stats` aggregate is not forced back into rolls.
+ * Artifacts carry the SETS (which is what the planner's 2/4-piece buff pool
+ * reads) AND the stat aggregate, written as one substat row per stat -- see
+ * `artifactSlots` for why the total is not split back into rolls.
  */
-function buildTeam({ idFor, catalogues, mapping }) {
+function buildTeam({ idFor, catalogues, mapping, notes }) {
   const units = idFor.map(({ id, detail }, i) => {
     const weaponId = detail.weapon?.name
       ? resolveByName(detail.weapon.name, catalogues.weapon, mapping.weapons)
       : null;
 
-    // `detail.sets` is `{ setKey: pieces }` (`{adaycarvedfromrisingwinds: 4}`).
-    // A set with N pieces fills N slots, in the game's own slot order; the rest
-    // stay empty, which is what "4-piece + off-piece" looks like.
-    const slots = {};
-    SLOT_KEYS.forEach((k) => { slots[k] = blankPiece(); });
-    let slot = 0;
-    for (const [key, pieces] of Object.entries(detail.sets || {})) {
-      const setId = resolveByName(key, catalogues.artifact, mapping.sets);
-      if (!setId) continue;
-      for (let n = 0; n < Number(pieces) && slot < SLOT_KEYS.length; n += 1) {
-        slots[SLOT_KEYS[slot]].setId = catalogueId(setId, catalogues.artifact[setId]);
-        slot += 1;
-      }
-    }
+    const slots = artifactSlots(detail, catalogues, mapping, notes);
 
     const cons = Number(detail.cons) || 0;
     const t = detail.talents || {};
@@ -333,6 +432,323 @@ function buildTeam({ idFor, catalogues, mapping }) {
   return { version: 1, units };
 }
 
+/* --------------------------------------------------------------- artifacts */
+
+/**
+ * gcsim's `character_details[i].stats` is a 25-slot vector in gcsim's OWN
+ * attribute order (`pkg/core/attributes/stats.go`), which is not the app's.
+ * The translation, index by index:
+ *
+ *    0 NoStat     1 DEF%      2 DEF       3 HP        4 HP%      5 ATK
+ *    6 ATK%       7 ER        8 EM        9 CR       10 CD      11 Heal
+ *   12 Pyro%     13 Hydro%   14 Cryo%    15 Electro% 16 Anemo%  17 Geo%
+ *   18 Dendro%   19 Phys%    20 AtkSpd   21 Dmg%     22..25 delimiter + bases
+ *
+ * CHECKED, not assumed: this run's own `add stats` line for varka
+ * (`hp=4780 atk=357.7 def=18.5 atk%=1.288 def%=0.109 em=102.6 er=0.065 cr=0.397
+ * cd=1.492`) lands on indices 3, 5, 2, 6, 1, 8, 7, 9, 10 of his vector, and the
+ * other three characters agree with theirs cell for cell.
+ *
+ * `unit` is HOW THE APP CAN HOLD THE NUMBER, which is not the same for all of
+ * them: a substat's value is free text, so any flat or percent stat fits there
+ * verbatim; an element or healing bonus only exists as a goblet's or circlet's
+ * MAIN stat, whose value is computed from the artifact curve. `null` means the
+ * app has nowhere to put it, and the report says so rather than dropping it
+ * silently.
+ */
+const GS_STAT = {
+  1: { key: 'defPct', unit: 'sub' },
+  2: { key: 'def', unit: 'sub' },
+  3: { key: 'hp', unit: 'sub' },
+  4: { key: 'hpPct', unit: 'sub' },
+  5: { key: 'atk', unit: 'sub' },
+  6: { key: 'atkPct', unit: 'sub' },
+  7: { key: 'er', unit: 'sub' },
+  8: { key: 'em', unit: 'sub' },
+  9: { key: 'critRate', unit: 'sub' },
+  10: { key: 'critDmg', unit: 'sub' },
+  11: { key: 'healBonus', unit: 'circlet' },
+  12: { key: 'pyroDmg', unit: 'goblet' },
+  13: { key: 'hydroDmg', unit: 'goblet' },
+  14: { key: 'cryoDmg', unit: 'goblet' },
+  15: { key: 'electroDmg', unit: 'goblet' },
+  16: { key: 'anemoDmg', unit: 'goblet' },
+  17: { key: 'geoDmg', unit: 'goblet' },
+  18: { key: 'dendroDmg', unit: 'goblet' },
+  19: { key: 'physBonus', unit: 'goblet' },
+  20: { key: 'atkSpd', unit: null },
+  21: { key: 'dmgBonus', unit: null },
+};
+
+/**
+ * The keys the vector carries as a FRACTION and the panel wants as a percent.
+ *
+ * `1.288` is 128.8% ATK, and the app's `atkPct` is that 128.8. Flat stats (HP,
+ * ATK, DEF, EM) are left alone -- `4780` is already 4780.
+ */
+const GS_PCT = new Set([
+  'hpPct', 'atkPct', 'defPct', 'er', 'critRate', 'critDmg', 'healBonus',
+  'pyroDmg', 'hydroDmg', 'cryoDmg', 'electroDmg', 'anemoDmg', 'geoDmg',
+  'dendroDmg', 'physBonus', 'dmgBonus',
+]);
+
+/** The artifact breakpoints a main stat's curve is sampled at. */
+const MAIN_LEVELS = [0, 4, 8, 12, 16, 20];
+
+/**
+ * The five artifact slots for one character: the SETS from the sample, plus the
+ * stat aggregate as ONE substat row per stat.
+ *
+ * WHY ONE ROW PER STAT. `add stats` is a total, not the pieces it came from.
+ * Splitting 128.8% ATK into legal rolls would invent rolls nobody made; one row
+ * carrying the total is the same number with none of the claim. The model has no
+ * rule against a large substat -- the legality list is a picker, not a validator
+ * -- so this is a presentation choice rather than a false statement about the
+ * pieces.
+ *
+ * A note is pushed for any stat the app cannot hold, so a dropped number shows
+ * up in the report instead of vanishing.
+ */
+function artifactSlots(detail, catalogues, mapping, notes) {
+  const slots = {};
+  SLOT_KEYS.forEach((k) => { slots[k] = blankPiece(); });
+
+  // `detail.sets` is `{ setKey: pieces }` (`{adaycarvedfromrisingwinds: 4}`).
+  // A set with N pieces fills N slots in the game's own slot order; the rest
+  // stay empty, which is what "4-piece + off-piece" looks like.
+  let slot = 0;
+  for (const [key, pieces] of Object.entries(detail.sets || {})) {
+    const setId = resolveByName(key, catalogues.artifact, mapping.sets);
+    if (!setId) continue;
+    for (let n = 0; n < Number(pieces) && slot < SLOT_KEYS.length; n += 1) {
+      slots[SLOT_KEYS[slot]].setId = catalogueId(setId, catalogues.artifact[setId]);
+      slot += 1;
+    }
+  }
+
+  const rows = [];
+  const mains = [];
+  (Array.isArray(detail.stats) ? detail.stats : []).forEach((raw, index) => {
+    const value = Number(raw) || 0;
+    if (!value) return;
+    const spec = GS_STAT[index];
+    if (!spec || !spec.unit) {
+      notes.push({ kind: 'stat-unmapped', index, value });
+      return;
+    }
+    const v = GS_PCT.has(spec.key) ? value * 100 : value;
+    if (spec.unit === 'sub') rows.push({ key: spec.key, value: v });
+    else mains.push({ slot: spec.unit, key: spec.key, value: v, index });
+  });
+
+  // A main stat can only take a value its own curve has, at a breakpoint. The
+  // +20 row is where a real goblet or circlet sits, so that is what gets written;
+  // anything the curve does not hold is reported rather than rounded into shape.
+  for (const m of mains) {
+    const level = MAIN_LEVELS.find(
+      (lv) => Math.abs((mainStatValue(m.key, lv) ?? NaN) - m.value) < 0.05
+    );
+    if (level == null) {
+      notes.push({ kind: 'stat-unrepresentable', index: m.index, key: m.key, value: m.value });
+      continue;
+    }
+    slots[m.slot].mainStat = m.key;
+    slots[m.slot].level = level;
+  }
+
+  // Four substat rows per piece, in slot order. The unused rows stay blank:
+  // "empty" and "a roll of 0" are different things, and the blank is the honest
+  // one.
+  SLOT_KEYS.forEach((key, i) => {
+    rows.slice(i * SUB_COUNT, (i + 1) * SUB_COUNT).forEach((r, j) => {
+      slots[key].subStats[j] = { key: r.key, value: r.value };
+    });
+  });
+
+  return slots;
+}
+
+/* ------------------------------------------------------------------- drops */
+
+/**
+ * Every source this team offers, keyed by the LIBRARY key the planner uses.
+ *
+ * THIS IS IDENTITY ONLY. The numbers a card carries come from the sample, not
+ * from here; what this map supplies is the thing the card is ABOUT -- its kind,
+ * its icon, its name, and the owner whose panel a formula would read. Sources
+ * are built by the planner's own `buildUnitSources` (not a second copy of its
+ * rules), so the card the import attaches is the card the pool would have
+ * offered.
+ */
+function teamSources(team, { catalogue, charData, setBonuses }) {
+  // The artifact catalogue shape `buildUnitSources` expects, built for the sets
+  // this team actually wears rather than all 66.
+  const sets = {};
+  for (const [id, bonuses] of Object.entries(setBonuses || {})) {
+    const meta = catalogue.artifact?.[id];
+    if (!meta) continue;
+    sets[id] = {
+      id,
+      chsName: meta.chsName,
+      enName: meta.enName,
+      setIcon: meta.setIcon,
+      bonuses,
+    };
+  }
+
+  const out = new Map();
+  for (const unit of team?.units || []) {
+    const charId = unit.char?.id;
+    const sources = buildUnitSources(unit, {
+      char: catalogue.char?.[charId] || null,
+      detail: charData?.[charId] || null,
+      weapon: catalogue.weapon?.[unit.weapon?.id] || null,
+      sets,
+    });
+    // Keyed by the LIBRARY key, not by unit: two units carrying one weapon is
+    // one weapon, the same reason the library itself is keyed that way.
+    for (const s of sources) {
+      if (!s.libKey || out.has(s.libKey)) continue;
+      out.set(s.libKey, {
+        kind: s.kind,
+        icon: s.icon,
+        iconKind: s.iconKind,
+        rank: s.rank || '',
+        name: s.name || null,
+        owner: s.owner || null,
+        libKey: s.libKey,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * gcsim's stat-line keys -> the app's panel field, and whether the value is a
+ * fraction the panel wants as a percent.
+ *
+ * `atk%: 0.25` is 25% ATK, so `pct` marks the lines that need the x100. Flat
+ * stats (`atk: 527.49`) are already in the panel's own unit and are left alone.
+ *
+ * `atkspd%` lands on `speed`, which is CARRIED and displayed but deliberately
+ * feeds no damage field (see `buff-model.js`): attack speed changes how often
+ * you hit, not how hard one hit is.
+ */
+const LINE_STAT = {
+  atk: { key: 'atk' }, hp: { key: 'hp' }, def: { key: 'def' }, em: { key: 'em' },
+  'atk%': { key: 'atkPct', pct: true }, 'hp%': { key: 'hpPct', pct: true },
+  'def%': { key: 'defPct', pct: true },
+  er: { key: 'er', pct: true }, cr: { key: 'critRate', pct: true },
+  cd: { key: 'critDmg', pct: true },
+  'dmg%': { key: 'dmgBonus', pct: true }, 'atkspd%': { key: 'speed', pct: true },
+  'heal%': { key: 'healBonus', pct: true }, 'phys%': { key: 'physBonus', pct: true },
+  'pyro%': { key: 'pyroDmg', pct: true }, 'hydro%': { key: 'hydroDmg', pct: true },
+  'cryo%': { key: 'cryoDmg', pct: true }, 'electro%': { key: 'electroDmg', pct: true },
+  'anemo%': { key: 'anemoDmg', pct: true }, 'geo%': { key: 'geoDmg', pct: true },
+  'dendro%': { key: 'dendroDmg', pct: true },
+};
+
+/** The keys a `damage` event carries about the HIT rather than about a status. */
+const HIT_KEYS = new Set([
+  'abil', 'amp', 'attack-tag', 'cata', 'crit', 'damage', 'ele',
+  'pre_damage_mods', 'source_frame', 'target',
+]);
+
+/** `25.000000000000004`-style float dust, trimmed after the x100. */
+const round6 = (n) => Math.round(n * 1e6) / 1e6;
+
+/**
+ * The stat lines ONE status contributed, as `{ source, key, value }` triples.
+ *
+ * A status is an array of `"<name>: <value>"` strings (`status: added`,
+ * `expiry_frame: 529`, `atk%: 0.25`). The first two say WHEN, not WHAT, so they
+ * are dropped. A `reason:` line means the status did NOT apply -- 四风原典 sits
+ * in the log with `reason: conditions not met` -- so it contributes nothing and
+ * the row gets no card for it, which is the honest reading: it really did
+ * nothing on that hit.
+ *
+ * The table understands two shapes, because the log does:
+ *   - a STRING is a local source key, and the log's own lines carry the numbers;
+ *   - an OBJECT is keyed by the log's LINE name and holds `{ source, stats }`,
+ *     for the statuses whose log says WHICH debuff without saying how much
+ *     (`resist_mods: [vvpyro, durin-a1-pyro]`, whose amounts live in the talent
+ *     and set text, not in the log).
+ */
+function statusLines(name, raw, table, note) {
+  const out = [];
+  const mapping = table[name];
+  const lines = (Array.isArray(raw) ? raw : []).map(String).map((s) => {
+    const at = s.indexOf(':');
+    return at < 0 ? [s.trim(), ''] : [s.slice(0, at).trim(), s.slice(at + 1).trim()];
+  }).filter(([k]) => k && k !== 'status' && k !== 'expiry_frame');
+
+  if (typeof mapping === 'string') {
+    for (const [lineKey, text] of lines) {
+      // `reason: conditions not met` -- 四风原典 and 图莱杜拉的回忆 sit in the log
+      // saying exactly this. It is a status that did NOT apply, which is not the
+      // same as a line this importer cannot read.
+      if (lineKey === 'reason') {
+        note({ kind: 'buff-inactive', status: name, line: lineKey, text });
+        continue;
+      }
+      const spec = LINE_STAT[lineKey];
+      if (!spec) {
+        note({ kind: 'buff-line-unknown', status: name, line: lineKey });
+        continue;
+      }
+      const n = Number(text);
+      if (!Number.isFinite(n)) {
+        note({ kind: 'buff-inactive', status: name, line: lineKey, text });
+        continue;
+      }
+      out.push({ source: mapping, key: spec.key, value: round6(spec.pct ? n * 100 : n) });
+    }
+    return out;
+  }
+
+  for (const [lineKey] of lines) {
+    const entry = mapping[lineKey];
+    if (!entry) {
+      note({ kind: 'buff-line-unknown', status: name, line: lineKey });
+      continue;
+    }
+    for (const [key, value] of Object.entries(entry.stats || {})) {
+      out.push({ source: entry.source, key, value: Number(value) });
+    }
+  }
+  return out;
+}
+
+/**
+ * The cards ONE ROW carries, from the status lines its own hits produced.
+ *
+ * Several statuses can name one source (`varka-a1-anemo` and `varka-a1-pyro` are
+ * both 法尔伽's p1; `celestialgift-4pc-active-buff` and `-holder-pyro` are both
+ * the 4-piece), so the lines are grouped BY SOURCE into one card each -- the
+ * shape the planner's own editor produces, and the reason a card holds a list.
+ */
+function rowDrops(pairs, sourceOf, note) {
+  const bySource = new Map();
+  for (const p of pairs) {
+    if (!bySource.has(p.source)) bySource.set(p.source, []);
+    bySource.get(p.source).push({ key: p.key, value: p.value, tag: '' });
+  }
+
+  const out = [];
+  // Sorted by source key so a file diff stays readable run to run.
+  for (const [key, buffs] of [...bySource].sort(([a], [b]) => (a < b ? -1 : 1))) {
+    const src = sourceOf(key);
+    if (!src) {
+      note({ kind: 'buff-source-missing', source: key });
+      continue;
+    }
+    // A FRESH source object per row: a drop is per-entry state, and a shared
+    // object would let an edit on one row move on another.
+    out.push({ id: `d-${key}`, source: { ...src }, buffs });
+  }
+  return out;
+}
+
 /* ---------------------------------------------------------------------- CLI */
 
 /** Read the char detail files only for the characters this run actually uses. */
@@ -349,6 +765,25 @@ function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
 
+/**
+ * The artifact set bonuses for the sets a run uses, keyed by set id.
+ *
+ * `buildUnitSources` needs a set's 2/4-piece TEXT to name the source it offers;
+ * the values come from the library like every other source's do. Only the sets
+ * this team actually wears are read -- the other sixty would be sixty file
+ * reads for nothing.
+ */
+function readSetBonuses(ids) {
+  const out = {};
+  for (const id of ids) {
+    const file = path.join(ROOT, 'public/data/artifact/chs', `${id}.json`);
+    if (!fs.existsSync(file)) continue;
+    const bonuses = readJson(file)?.info?.setBonuses;
+    if (bonuses) out[id] = bonuses;
+  }
+  return out;
+}
+
 function main() {
   const sampleFile = arg('sample', path.join(ROOT, 'scratch/_gcsim_serve_sample.json'));
   const abilitiesFile = arg('abilities', path.join(ROOT, 'public/data/gcsim-abilities.json'));
@@ -358,6 +793,7 @@ function main() {
 
   const sample = loadSample(sampleFile);
   const mapping = readJson(abilitiesFile);
+  const talentDamage = readJson(path.join(ROOT, 'public/data/talent-damage.json'));
   const catalogues = {
     char: readJson(path.join(ROOT, 'public/data/charlist.json')),
     weapon: readJson(path.join(ROOT, 'public/data/weaponlist.json')),
@@ -373,7 +809,17 @@ function main() {
   const charData = readCharData([...new Set(ids)]);
   const team = teamFile ? readJson(teamFile).team || readJson(teamFile) : null;
 
-  const { doc, report } = importGcsim({ sample, mapping, catalogues, charData, team });
+  // The sets this run wears, resolved exactly as `buildTeam` resolves them.
+  const setIds = [...new Set(
+    (sample.character_details || []).flatMap((cd) => Object.keys(cd.sets || {}).map(
+      (key) => resolveByName(key, catalogues.artifact, mapping.sets)
+    )).filter(Boolean).map(String)
+  )];
+  const setBonuses = readSetBonuses(setIds);
+
+  const { doc, report } = importGcsim({
+    sample, mapping, catalogues, charData, talentDamage, team, setBonuses,
+  });
 
   fs.mkdirSync(path.dirname(outFile), { recursive: true });
   fs.writeFileSync(outFile, JSON.stringify(doc, null, 2));
@@ -397,10 +843,47 @@ function printReport(report, outFile) {
   console.error(`damage 事件 ${report.damageEvents} · 映射 ${report.mappedHits} · 忽略 ${report.ignoredHits} · 未映射 ${report.unmappedHits}`);
   console.error(`写出 ${report.entries} 条目 -> ${outFile}`);
   if (report.unmappedHits) {
-    console.error('未映射的命中没有写进轴（多为命座/天赋伤害，需要补 public/data/talent-damage.json 后再对照）。');
+    console.error('未映射的命中没有写进轴；如果它是命座/天赋伤害，先在 talent-damage.json 里标记 damage:true 并填 mult，再把它加进 gcsim-abilities.json。');
   }
-  console.error('行里的 note 记录了 gcsim 的单击/合计；面板对齐（圣遗物词条与增益栈）是下一步。');
-  console.error('导入方法：规划器右上角「导入」选择上面这个 json。');
-}
 
+  // The panel: what crossed over, and what the app had nowhere to put.
+  if (report.statNotes?.length) {
+    for (const n of report.statNotes) {
+      if (n.kind === 'stat-unmapped') {
+        console.error(`词条 index ${n.index} = ${n.value} 没有对应的本地字段，没写进面板。`);
+      } else {
+        console.error(`词条 ${n.key} = ${n.value} 不在圣遗物曲线上，没写进面板。`);
+      }
+    }
+  } else {
+    console.error('词条：add stats 的数值全部写进了面板。');
+  }
+
+  // The buffs: which source reached how many rows, and everything unreadable.
+  const cards = report.buffs?.cards || [];
+  if (cards.length) {
+    console.error(`增益：${cards.length} 个来源按 sample 逐条挂卡 ——`);
+    for (const c of cards) {
+      const label = c.name?.chs || c.name?.en || c.libKey;
+      console.error(`  ${String(c.rows).padStart(4)} 条 / ${String(c.hits).padStart(4)} 击  ${label}  (${c.libKey})`);
+    }
+  } else {
+    console.error('增益：这条日志里没有可挂的状态；行里只有面板。');
+  }
+  for (const n of report.buffs?.notes || []) {
+    if (n.kind === 'buff-status-unknown') {
+      console.error(`增益：状态「${n.status}」不在 gcsim-abilities.json 的 buffs 表里，这几击没挂卡。`);
+    } else if (n.kind === 'buff-line-unknown') {
+      console.error(`增益：状态「${n.status}」的 ${n.line} 没有对应的本地字段，这一项没挂上。`);
+    } else if (n.kind === 'buff-inactive') {
+      console.error(`增益：状态「${n.status}」的 ${n.line} =「${n.text}」，这一击没生效，不挂卡。`);
+    } else if (n.kind === 'buff-source-missing') {
+      console.error(`增益：来源 ${n.source} 在这支队伍里不存在，挂在它上面的数值没能落到行里。`);
+    } else {
+      console.error(`增益：${n.status} 的 ${n.key} 在一行内出现了两个值（${n.from} / ${n.to}），取了第一个。`);
+    }
+  }
+
+  console.error('行里的 note 记录了 gcsim 的单击/合计；导入方法：规划器右上角「导入」选择上面这个 json。');
+}
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) main();

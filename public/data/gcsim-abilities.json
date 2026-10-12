@@ -8,7 +8,10 @@
     "stage 用「中文行名」而不是行下标：行名是人能核对的东西，",
     "下标会随着角色天赋表增删一行而整体漂移，而且漂移后不报错、只是悄悄指错行。",
     "",
-    "characters / weapons / sets 只写「自动推断不出来的特例」（例如 gcsim 的别名 liftingwinds）；",
+    "命座/天赋的独立伤害（const2 / const4 / p1 这些来源）也在这里对，它们的行名来自",
+    "public/data/talent-damage.json 的 basis（攻击力 -> 「攻击力倍率伤害」）。",
+    "",
+    "characters / weapons / sets 只写「自动推断不出来的特例」，例如 gcsim 的别名；",
     "能推断的（gcsim 名 = 英文名去掉非字母数字再小写）留给代码推断，不在这里铺一遍。"
   ],
 
@@ -31,13 +34,16 @@
       "Sturm und Drang Normal 0": { "source": "elementalskill", "stage": "狂飙突进·一段伤害" },
       "Sturm und Drang Normal 1": { "source": "elementalskill", "stage": "狂飙突进·二段伤害" },
       "Four Winds' Ascension": { "source": "elementalskill", "stage": "四风将起伤害" },
-      "Azure Devour": { "source": "elementalskill", "stage": "苍噬伤害" }
+      "Azure Devour": { "source": "elementalskill", "stage": "苍噬伤害" },
+      "Varka C2": { "source": "const2", "stage": "攻击力倍率伤害" }
     },
     "10000132": {
       "Ring-A-Ding-Ding! Hexhunter Chime DMG": { "source": "elementalskill", "stage": "叮铃铃·猎魔之音伤害" },
       "Clang Clang! Witch-tribution Comes! DMG": { "source": "elementalskill", "stage": "咚锵锵·裁魔之惩伤害" },
       "The Bell Tolls! The Hunt Is On!": { "source": "elementalburst", "stage": "技能伤害" },
-      "Witchlure Bell": { "source": "elementalburst", "stage": "诱巫饵铃伤害" }
+      "Witchlure Bell": { "source": "elementalburst", "stage": "诱巫饵铃伤害" },
+      "Banehunter Oathhammer (A1)": { "source": "p1", "stage": "攻击力倍率伤害" },
+      "Banehunter Oathhammer Ricochet (C4)": { "source": "const4", "stage": "攻击力倍率伤害" }
     },
     "10000131": {
       "Revelation: Uncreated Light": { "source": "elementalskill", "stage": "技能伤害" }
@@ -46,6 +52,62 @@
       "Confirmation of Purity": { "source": "elementalskill", "stage": "转变·白化之是伤害" },
       "As the Light Shifts": { "source": "elementalburst", "stage": "白化法·如光流变伤害" },
       "Dragon of White Flame": { "source": "elementalburst", "stage": "白焰之龙伤害" }
+    }
+  },
+
+  "buffs": {
+    "_comment": [
+      "gcsim 状态名 -> 本地来源（增益库的 libKey）。两个形状：",
+      "  字符串 = 本地来源键，数值取日志里那一击自己带的数（fraction 自动 x100）；",
+      "  对象   = 日志只说了是哪一种减抗、没说数值（resist_mods），数值来自天赋/套装说明。",
+      "没有列在这里的状态名不挂卡，但会在 --report 里报出来；",
+      "reason 行（conditions not met 之类）说明那一击没生效，同样不挂卡。"
+    ],
+
+    "a-day-carved-from-rising-winds-2pc": "artifact:15044:2",
+    "blessing-of-pastoral-winds": "artifact:15044:4",
+    "resolve-of-pastoral-winds": "artifact:15044:4",
+    "celestialgift-2pc": "artifact:15045:2",
+    "celestialgift-4pc-active-buff": "artifact:15045:4",
+    "celestialgift-4pc-holder-pyro": "artifact:15045:4",
+    "vv-2pc": "artifact:15002:2",
+
+    "mistsplitter": "weapon:11509:r1",
+    "gest-of-the-mighty-wolf-atkspd": "weapon:12515:r1",
+    "gest-of-the-mighty-wolf-stacks": "weapon:12515:r1",
+    "tulaytullahsremembrance-atkspd": "weapon:14512:r1",
+    "lost-prayer": "weapon:14502:r1",
+
+    "varka-a1-anemo": "talent:10000128:p1",
+    "varka-a1-pyro": "talent:10000128:p1",
+    "varka-c4-anemo": "constellation:10000128:c4",
+    "varka-c4-pyro": "constellation:10000128:c4",
+    "varka-c6-cdmg": "constellation:10000128:c6",
+
+    "prune-c2": "constellation:10000132:c2",
+    "prune-c6-self-buff": "constellation:10000132:c6",
+    "prune-c6-active-buff": "constellation:10000132:c6",
+    "prune-hex-self-buff": "talent:10000132:p4",
+    "prune-hex-team-buff": "talent:10000132:p4",
+
+    "grace-of-kenosis": "talent:10000131:p1",
+    "guidance-of-theosis": "talent:10000131:p1",
+
+    "pyro-res": "party:pyro-resonance",
+
+    "resist_mods": {
+      "vvpyro": { "source": "artifact:15002:4", "stats": { "resShredPyro": 40 } },
+      "durin-a1-pyro": { "source": "talent:10000123:p1", "stats": { "resShredPyro": 20 } },
+      "durin-a1-anemo": { "source": "talent:10000123:p1", "stats": { "resShredAnemo": 20 } }
+    }
+  },
+
+  "extraSources": {
+    "_comment": "不属于任何角色的来源（队伍共鸣），键就是 buffs 表里写的那个键。",
+    "party:pyro-resonance": {
+      "kind": "other",
+      "name": { "chs": "火元素共鸣", "en": "Pyro Resonance" },
+      "rank": ""
     }
   },
 

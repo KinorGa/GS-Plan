@@ -215,7 +215,8 @@ npm run gcsim:import
 ```
 
 产物 `data/gcsim-config.json` 用规划器的「导入」载入。每行带一条 note 记录 gcsim 的单击/合计，
-可直接和旁边的面板数对照；轴的结构是准的，面板对齐（圣遗物词条与增益栈）还没做。
+可直接和旁边的面板数对照。面板也一起重建：圣遗物词条取样本的 `add stats` 聚合值，
+**增益卡逐条照抄日志**——每条只挂它自己那几击里真正生效的来源，数值也取那一刻的数。
 对照表、维护方式与已知差异见 **[docs/GCSIM.md](docs/GCSIM.md)**。
 
 ## 数据与素材
@@ -228,7 +229,8 @@ npm run gcsim:import
 - `public/data/stats-compact.json` —— 白值因子表，`npm run stats:update` 从游戏配置表打包而来
 - `public/data/talent-damage.json` —— 伤害源倍率，先在 `audit.html` 里过一遍人工审核再导出
 - `data/config/buff-library.json` —— 各来源的增益数值，在 `buffs.html` 里手工填写
-- `public/data/gcsim-abilities.json` —— gcsim 的 ability 名 → 本地伤害行的对照表，`npm run gcsim:import` 用
+- `public/data/gcsim-abilities.json` —— gcsim 的 ability 名 → 本地伤害行、以及状态名 → 本地来源的对照表，
+  `npm run gcsim:import` 用
 
 后两者所在的页面不是公共界面：官方只给文字描述、不给数值表，这两页就是拿来人工补齐的，
 平常用规划器不需要打开它们。
