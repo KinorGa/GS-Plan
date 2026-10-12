@@ -1,0 +1,96 @@
+# ---------------------------------------------------------------- Node / build
+node_modules/
+.npm-cache/
+.pnpm-store/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.eslintcache
+
+# Build output. `build.mjs` regenerates dist/ from src/ + public/, so it is a
+# derived artifact and is never committed.
+dist/
+build/
+*.tsbuildinfo
+
+# ------------------------------------------------------------- Python (legacy)
+# The repo is a Node project. These are leftovers from a Python project
+# template (main.py only prints a greeting) and are not part of the app, so
+# they stay untracked along with any stray virtualenv.
+__pycache__/
+*.py[oc]
+*.egg-info/
+wheels/
+.venv/
+venv/
+env/
+main.py
+pyproject.toml
+uv.lock
+.python-version
+
+# ------------------------------------------------------------------- local data
+# Throwaway investigation scripts and the headed-Chrome profile used for
+# CDP-driven verification. Both are machine-local byproducts, not source.
+scratch/
+*.log
+
+# The user's own saved rotations and configuration exports, written by the app's
+# export button and by serve.mjs's data endpoint. They are this machine's work
+# -- multi-megabyte rotation dumps and hand-exported snapshots -- not source.
+# data/config/buff-library.json IS the durable, hand-typed library the data
+# endpoint exists to protect, so it stays trackable.
+data/*
+!data/config/
+!data/config/**
+
+# The fetch manifest records what THIS machine has already downloaded, so it
+# describes a local copy rather than the repository. Committing it would make
+# one machine's state look canonical to everyone else.
+public/.lunaris-manifest.json
+
+# --------------------------------------------------------- fetched assets (no)
+# The dataset and its artwork are DOWNLOADED, not committed. Together they are
+# ~135 MB / ~10,800 files of third-party content -- official art, and scraped
+# detail text (character stories, quotes) -- none of which this project owns or
+# needs to version. `npm run fetch` (incremental, resumable) restores both from
+# the source; it is the first step in the README's quick start.
+#
+# What stays TRACKED is only what this project itself produces or reviews:
+#   public/data/stats-compact.json   packed from the raw Excel by build-stats.mjs
+#   public/data/talent-damage.json   drafted by a script, then reviewed by hand
+#   data/config/buff-library.json    hand-typed, guarded by serve.mjs's endpoint
+public/img/
+public/data/char/
+public/data/artifact/
+public/data/charlist.json
+public/data/weaponlist.json
+public/data/artifactlist.json
+
+# The RAW Excel tables the stat factors are generated from: ~2.8 MB of dumped
+# game data that is downloaded on demand by `npm run stats:fetch`. Only the
+# packed result (public/data/stats-compact.json) is committed, so it stays
+# reproducible without the dumps.
+stats-src/
+
+# A half-written download left by an interrupted fetch.
+*.part
+
+# ------------------------------------------------------------- editor / system
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ------------------------------------------------------------------------ env
+.env
+.env.local
+.env.*.local
+
+# Chrome profiles for the browser tests -- disposable, see scratch/_profiles.mjs
+tmp/

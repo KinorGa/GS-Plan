@@ -1,0 +1,37 @@
+{
+  "name": "gs-plan",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node serve.mjs",
+    "build": "node build.mjs",
+    "start": "node serve.mjs",
+    "fetch": "node scripts/fetch-lunaris.mjs",
+    "fetch:check": "node scripts/fetch-lunaris.mjs --check",
+    "fetch:force": "node scripts/fetch-lunaris.mjs --force",
+    "stats:fetch": "node scripts/fetch-stats.mjs",
+    "stats:check": "node scripts/fetch-stats.mjs --check",
+    "stats:build": "node scripts/build-stats.mjs",
+    "stats:update": "node scripts/fetch-stats.mjs && node scripts/build-stats.mjs",
+    "postinstall": "node scripts/patch-vite.mjs"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.2"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.25.7",
+    "@babel/plugin-syntax-jsx": "^7.25.7",
+    "@babel/plugin-transform-react-jsx": "^7.25.7",
+    "@rollup/plugin-commonjs": "^28.0.1",
+    "@rollup/plugin-node-resolve": "^15.3.0",
+    "@rollup/plugin-replace": "^6.0.1",
+    "autoprefixer": "^10.4.20",
+    "playwright-core": "^1.63.0",
+    "postcss": "^8.4.47",
+    "rollup": "^4.24.0",
+    "tailwindcss": "^3.4.13"
+  }
+}
