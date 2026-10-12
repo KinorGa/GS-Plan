@@ -38,18 +38,52 @@ const partToggle = e1.locator('button[title="展开"], button[title="Expand"]').
 if (await partToggle.count()) { await partToggle.click(); await p.waitForTimeout(1200); }
 console.log('stat fields visible:', await p.evaluate(()=>document.querySelectorAll('[data-stat-field]').length));
 
-const read = () => p.evaluate(() => {
-  const labels=['总生命','总攻击','总防御','天赋倍率','反应增幅','暴击','伤害加成','防御区','抗性区','充能效率'];
-  const out={};
-  for (const lab of labels){ const el=[...document.querySelectorAll('p')].find(x=>x.textContent.trim()===lab); if(el) out[lab]=el.nextElementSibling?.textContent; }
-  const dmg=[...document.querySelectorAll('p')].find(x=>x.textContent.trim()==='单段伤害');
-  const fields=[...document.querySelectorAll('[data-stat-field]')].map(f=>{const inp=f.querySelector('input'); return { key:f.getAttribute('data-stat-field'), value:inp.value, clipped: inp.scrollWidth>inp.clientWidth+1 };});
-  return { strip: out, perHit: dmg?.nextElementSibling?.textContent, fields };
-});
+// The strip items carry `data-summary="<key>"`, so a probe can find the summary
+// value outright. `伤害加成` is BOTH a field-group heading and a summary label,
+// so the old text-matching reader hit the heading and printed the whole group's
+// rows as its value -- a run-on that read like a strip-rendering bug. Keying off
+// the attribute removes the ambiguity for good.
+const SUMMARY_KEYS = ['totalHp', 'totalAtk', 'totalDef', 'talent', 'reaction', 'crit', 'dmgBonus', 'defZone', 'resZone', 'er'];
+
+const read = () => p.evaluate((keys) => {
+  const strip = {};
+  for (const k of keys) {
+    const box = document.querySelector(`[data-summary="${k}"]`);
+    strip[k] = {
+      label: box?.firstElementChild?.textContent?.trim() ?? null,
+      value: box?.lastElementChild?.textContent?.trim() ?? null,
+    };
+  }
+  const fields = [...document.querySelectorAll('[data-stat-field]')].map((f) => {
+    const inp = f.querySelector('input');
+    return { key: f.getAttribute('data-stat-field'), value: inp.value, clipped: inp.scrollWidth > inp.clientWidth + 1 };
+  });
+  return { strip, perHit: document.querySelector('[data-summary="perHit"]')?.textContent?.trim() ?? null, fields };
+}, SUMMARY_KEYS);
+
 const r = await read();
 console.log(JSON.stringify(r, null, 1));
 console.log('errors:', JSON.stringify(errs));
-await e1.screenshot({ path:'tests/summary-precision.png' }).catch(()=>{});
-await p.screenshot({ path:'tests/summary-precision-full.png' });
+
+let fail = 0;
+const check = (name, got, want) => {
+  const ok = got === want;
+  if (!ok) fail++;
+  console.log(`${ok ? 'PASS' : 'FAIL'} ${name}: ${JSON.stringify(got)}${ok ? '' : ' != ' + JSON.stringify(want)}`);
+};
+
+// Every strip item exists and shows a value. 伤害加成 must read a single
+// percentage -- if it ever reads the field grid again, the '✕' clear-buttons
+// would show up here.
+for (const k of SUMMARY_KEYS) check(`strip item ${k}`, typeof r.strip[k].value === 'string' && r.strip[k].value.length > 0, true);
+check('dmgBonus is one percentage', /^-?[\d,]+(\.\d+)?%$/.test(r.strip.dmgBonus.value), true);
+check('dmgBonus carries no clear-button glyph', r.strip.dmgBonus.value.includes('✕'), false);
+check('perHit is a number', /^-?[\d,]+(\.\d+)?$/.test(r.perHit), true);
+check('fields rendered', r.fields.length > 0, true);
+check('page errors', errs.length, 0);
+
+await e1.screenshot({ path: 'tests/summary-precision.png' }).catch(() => {});
+await p.screenshot({ path: 'tests/summary-precision-full.png' });
 await browser.close(); chrome.kill(); await removeProfile(profile);
-console.log('done');
+console.log(fail ? `FAILED: ${fail}` : 'all summary checks passed');
+process.exit(fail ? 1 : 0);

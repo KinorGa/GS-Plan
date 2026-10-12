@@ -122,7 +122,7 @@ export function buildUnitSources(unit, ctx = {}) {
   // `sourceKey`. Built here rather than imported so this module -- which
   // describes ONE UNIT'S sheet -- stays free of a dependency on how the library
   // happens to be stored. The two formats are asserted equal in
-  // scratch/check-library.mjs, so a drift is caught rather than assumed away.
+  // tests/check-library.mjs, so a drift is caught rather than assumed away.
   const libKey = (kind, id, slot) => [kind, id, slot].filter(Boolean).join(':');
 
   const out = [];

@@ -14,7 +14,6 @@
     "stats:check": "node scripts/fetch-stats.mjs --check",
     "stats:build": "node scripts/build-stats.mjs",
     "stats:update": "node scripts/fetch-stats.mjs && node scripts/build-stats.mjs",
-    "postinstall": "node scripts/patch-vite.mjs",
     "test": "node tests/run.mjs",
     "test:browser": "node tests/run.mjs --browser"
   },

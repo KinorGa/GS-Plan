@@ -36,7 +36,7 @@ import { STAT_META } from './stat-meta';
  * Kept here rather than imported from `lib/damage.js` because this module is a
  * pure description of "what a symbol means", and damage.js pulls in the whole
  * formula. The arithmetic is asserted equal to the formula's in
- * `scratch/check-buff-formula.mjs`.
+ * `tests/check-buff-formula.mjs`.
  */
 export const TOTALS = {
   hp: (p) => (p.hp || 0) * (1 + (p.hpPct || 0) / 100) + (p.flatHp || 0),

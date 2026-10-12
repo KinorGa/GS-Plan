@@ -2,7 +2,7 @@
 //
 // `resolve-js.mjs` finds `../DamageCard.jsx`; Node then refuses to execute it
 // ("Unknown file extension .jsx"). This hook runs the same Babel JSX transform
-// the build uses, so a scratch check can import a module graph that reaches a
+// the build uses, so a committed check can import a module graph that reaches a
 // component -- `lib/axis-compute.js` imports `DamageCard` for `defaultStats()`,
 // which is the whole reason this exists.
 //

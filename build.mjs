@@ -1,9 +1,8 @@
 // Build the app with Rollup, entirely in-process.
 //
-// Vite (and esbuild) need child processes, which this sandbox blocks, so the
-// app is bundled with Rollup instead: Rollup is pure JavaScript, handles JSX
-// through Babel, converts the CommonJS React packages to ESM, and runs Tailwind
-// as a PostCSS plugin. The output is a normal static site in ./dist.
+// Rollup is pure JavaScript, so the whole bundle -- Babel for JSX, the CommonJS
+// React packages, and Tailwind as a PostCSS plugin -- comes out of one in-process
+// pass, with no child processes. The output is a normal static site in ./dist.
 import { rollup } from 'rollup';
 import nodeResolve from '@rollup/plugin-node-resolve';
 import commonjs from '@rollup/plugin-commonjs';

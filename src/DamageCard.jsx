@@ -1055,19 +1055,20 @@ export default function DamageCard({
 
         {/* Live intermediate results - pinned below the scrolling field list */}
         <div className="mt-3 grid shrink-0 grid-cols-3 gap-1.5 border-t border-white/5 pt-3 xl:grid-cols-5">
-          <Mini label={L({ chs: '总生命', en: 'Total HP' })} value={s3(result.totalHp)} />
-          <Mini label={L({ chs: '总攻击', en: 'Total ATK' })} value={s3(result.totalAtk)} />
-          <Mini label={L({ chs: '总防御', en: 'Total DEF' })} value={s3(result.totalDef)} />
-          <Mini label={L({ chs: '天赋倍率', en: 'Talent' })} value={`${s3(result.talent * 100)}%`} />
+          <Mini stat="totalHp" label={L({ chs: '总生命', en: 'Total HP' })} value={s3(result.totalHp)} />
+          <Mini stat="totalAtk" label={L({ chs: '总攻击', en: 'Total ATK' })} value={s3(result.totalAtk)} />
+          <Mini stat="totalDef" label={L({ chs: '总防御', en: 'Total DEF' })} value={s3(result.totalDef)} />
+          <Mini stat="talent" label={L({ chs: '天赋倍率', en: 'Talent' })} value={`${s3(result.talent * 100)}%`} />
           <Mini
+            stat="reaction"
             label={L({ chs: '反应增幅', en: 'Reaction' })}
             value={reaction.amp ? `x${s3(result.reactMult)}` : '—'}
           />
-          <Mini label={L({ chs: '暴伤区', en: 'Crit DMG Zone' })} value={`x${s3(result.critMult)}`} />
-          <Mini label={L({ chs: '伤害加成', en: 'DMG Bonus' })} value={`${s3(result.bonusPct)}%`} />
-          <Mini label={L({ chs: '防御区', en: 'DEF Zone' })} value={`x${s3(result.defMult)}`} />
-          <Mini label={L({ chs: '抗性区', en: 'RES Zone' })} value={`x${s3(result.resMult)}`} />
-          <Mini label={L({ chs: '充能效率', en: 'Energy Rech.' })} value={`${s3(result.er)}%`} />
+          <Mini stat="crit" label={L({ chs: '暴伤区', en: 'Crit DMG Zone' })} value={`x${s3(result.critMult)}`} />
+          <Mini stat="dmgBonus" label={L({ chs: '伤害加成', en: 'DMG Bonus' })} value={`${s3(result.bonusPct)}%`} />
+          <Mini stat="defZone" label={L({ chs: '防御区', en: 'DEF Zone' })} value={`x${s3(result.defMult)}`} />
+          <Mini stat="resZone" label={L({ chs: '抗性区', en: 'RES Zone' })} value={`x${s3(result.resMult)}`} />
+          <Mini stat="er" label={L({ chs: '充能效率', en: 'Energy Rech.' })} value={`${s3(result.er)}%`} />
         </div>
 
         <div className="mt-2.5 flex shrink-0 flex-wrap gap-1.5">
@@ -1209,7 +1210,7 @@ export default function DamageCard({
           <p className="text-[10px] uppercase tracking-wider text-white/40">
             {L({ chs: '单段伤害', en: 'Damage per Hit' })}
           </p>
-          <p className="mt-1 text-3xl font-bold tabular-nums text-white">{n(result.perHit)}</p>
+          <p data-summary="perHit" className="mt-1 text-3xl font-bold tabular-nums text-white">{n(result.perHit)}</p>
           {effectiveStage.hits > 1 && (
             <p className="mt-1 text-xs text-white/50">
               x {effectiveStage.hits} {L({ chs: '段合计', en: 'hits total' })}{' '}
@@ -1367,9 +1368,9 @@ function StatField({ def, label, value, onChange, injected = 0, isOverridden = f
   );
 }
 
-function Mini({ label, value }) {
+function Mini({ label, value, stat }) {
   return (
-    <div className="rounded-lg border border-white/5 bg-white/[0.02] px-2 py-1.5">
+    <div data-summary={stat} className="rounded-lg border border-white/5 bg-white/[0.02] px-2 py-1.5">
       <p className="truncate text-[9px] uppercase tracking-wider text-white/35">{label}</p>
       <p className="mt-0.5 text-[13px] font-semibold tabular-nums text-white">{value}</p>
     </div>

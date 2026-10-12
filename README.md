@@ -12,7 +12,7 @@
 ```bash
 npm install          # 安装依赖
 npm run fetch        # 下载数据集与图片（增量、可续传；见 docs/FETCHING.md）
-npm run build        # 构建到 dist/（Rollup + Babel + Tailwind，全部进程内完成）
+npm run build        # 构建到 dist/（Rollup + Babel + Tailwind）
 npm run dev          # 启动本地服务
 ```
 
@@ -257,26 +257,18 @@ GET /data/assets/{icons,skills,items}/...   -> 各类图标
 │       └── rotation-segment.js # 循环容器：合并/展开/扁平化
 ```
 
-## 关于沙箱：为什么不用 Vite
-
-构建完全在 Node 进程内完成（`build.mjs` 里用 Rollup 的 JS API 调 Babel 与 Tailwind/PostCSS 插件），
-不 spawn 子进程——Vite 在这类受限沙箱里会因为探测而挂住。`package.json` 的 `postinstall` 会执行
-`scripts/patch-vite.mjs`，用于在**普通环境**下使用 Vite 时跳过它 Windows 端的 `net use` 探测。
-若你不在沙箱里，也可以直接用 `npx vite`。
-
 ## 验证
 
 伤害轴的所有数字由 `lib/axis-compute.js` **一次推导**，不缓存在组件里：折叠行、展开卡、
-底部统计读的是同一个函数，所以它们不可能不一致。配套检查脚本在 `scratch/`：
+底部统计读的是同一个函数，所以它们不可能不一致。这些数字由 `tests/` 里的一组检查脚本兜底：
+每个脚本都是独立程序，打印它验证了什么，失败就以非零退出码结束（说明见 [tests/README.md](tests/README.md)）。
 
 ```bash
-node --import ./scratch/register.mjs scratch/check-derive.mjs          # 面板推导
-node --import ./scratch/register.mjs scratch/check-buff-formula.mjs    # 公式引擎
-node --import ./scratch/register.mjs scratch/check-artifact-totals.mjs # 词条合计
-node --import ./scratch/register.mjs scratch/check-consistency.mjs     # 字段口径
+npm test               # 纯函数检查：不需要浏览器，也不需要服务
+npm run test:browser   # 再加浏览器检查（Playwright 驱动本机 Chrome，先 npm run dev）
 ```
 
-浏览器侧的检查用 Playwright 驱动本机 Chrome（`scratch/check-*.mjs`）。
+单独跑某一个：`node --import ./tests/register-jsx-run.mjs tests/check-derive.mjs`。
 
 ## 开发
 

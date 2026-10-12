@@ -146,7 +146,6 @@ README 只讲规划器（`planner.html`）；这份文档讲**整个仓库里都
 
 - `fetch-lunaris.mjs` / `fetch-stats.mjs` / `build-stats.mjs` — 拉取与打包（见 `docs/FETCHING.md`、`docs/STATS.md`）。
 - `audit-talent-damage.mjs` — `talent-damage.json` 草稿辅助。
-- `patch-vite.mjs` — `postinstall`，普通环境下绕开 Vite 在 Windows 的 `net use` 探测。
 
 ---
 
@@ -181,22 +180,22 @@ localStorage key 一览：`lunaris-axes`（轴，旧 `lunaris-rotation` 会自�
 
 ---
 
-## 7. 检查脚本（`scratch/`，不入库）
+## 7. 检查脚本（`tests/`，入库）
 
-36 个 `check-*.mjs`。三类用法：
+36 个 `check-*.mjs`。它们原本在 `scratch/`（不入库），现在连同最小 fixture 一起提交了，
+跑法与各脚本的职责见 [tests/README.md](../tests/README.md)：
 
 ```bash
-# 纯函数：resolver hook 补 .js/.jsx 扩展名
-node --import ./scratch/register.mjs scratch/check-derive.mjs
-
-# 依赖链里有 .jsx（如 axis-compute → DamageCard）：用 Babel 编译 JSX
-node --import ./scratch/register-jsx-run.mjs scratch/repro-e1.mjs
-
-# 浏览器侧：Playwright 驱动本机 Chrome
-node scratch/smoke-pages.mjs
+npm test               # 纯函数检查：resolver hook 负责补 .js / .jsx 扩展名
+npm run test:browser   # 浏览器检查：Playwright 驱动本机 Chrome（先 npm run dev）
 ```
 
-常用：`check-derive`、`check-buff-formula`、`check-artifact-totals`、`check-consistency`、`check-entry-note`、`check-child-notes`、`repro-e1`；浏览器冒烟用 `smoke-pages.mjs`，截图用 `shots-planner.mjs`。
+单独跑某一个：`node --import ./tests/register-jsx-run.mjs tests/check-derive.mjs`。
+依赖链里有 `.jsx`（如 `axis-compute` → `DamageCard`）时必须用 `register-jsx-run`，纯函数用 `register` 即可。
+
+常用：`check-derive`、`check-buff-formula`、`check-artifact-totals`、`check-consistency`、
+`check-entry-note`、`check-child-notes`。一次性的排查脚本（`repro-*`、`smoke-*`、`shots-*`）仍然
+只留在不入库的 `scratch/`。
 
 ---
 
