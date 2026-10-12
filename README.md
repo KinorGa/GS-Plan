@@ -206,6 +206,18 @@ buff 数组；拖拽时 `dataTransfer` 里放的是整张卡 + 其 buffs 的 JSO
 
 配队 + 全部伤害轴导出为 JSON、导入还原，或一键清空。旧存档会被自动迁移。
 
+### 从 gcsim 导入轴
+
+[gcsim](https://github.com/genshinsim/gcsim) 跑出来的每一击都可以直接导成一条轴：
+
+```bash
+npm run gcsim:import
+```
+
+产物 `data/gcsim-config.json` 用规划器的「导入」载入。每行带一条 note 记录 gcsim 的单击/合计，
+可直接和旁边的面板数对照；轴的结构是准的，面板对齐（圣遗物词条与增益栈）还没做。
+对照表、维护方式与已知差异见 **[docs/GCSIM.md](docs/GCSIM.md)**。
+
 ## 数据与素材
 
 规划器读的每个数字都是本地文件，运行时一次网络请求都不发。
@@ -216,6 +228,7 @@ buff 数组；拖拽时 `dataTransfer` 里放的是整张卡 + 其 buffs 的 JSO
 - `public/data/stats-compact.json` —— 白值因子表，`npm run stats:update` 从游戏配置表打包而来
 - `public/data/talent-damage.json` —— 伤害源倍率，先在 `audit.html` 里过一遍人工审核再导出
 - `data/config/buff-library.json` —— 各来源的增益数值，在 `buffs.html` 里手工填写
+- `public/data/gcsim-abilities.json` —— gcsim 的 ability 名 → 本地伤害行的对照表，`npm run gcsim:import` 用
 
 后两者所在的页面不是公共界面：官方只给文字描述、不给数值表，这两页就是拿来人工补齐的，
 平常用规划器不需要打开它们。

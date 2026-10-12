@@ -1,0 +1,55 @@
+{
+  "_comment": [
+    "gcsim -> GS-Plan 对照表，由 scripts/gcsim-import.mjs 读取。",
+    "",
+    "gcsim 的 ability 名是它自己的内部名，本地数据里没有，只能人工对照，",
+    "所以每个角色的每个 ability 都在这里明确写死，改错了肉眼就能看出来。",
+    "",
+    "stage 用「中文行名」而不是行下标：行名是人能核对的东西，",
+    "下标会随着角色天赋表增删一行而整体漂移，而且漂移后不报错、只是悄悄指错行。",
+    "",
+    "characters / weapons / sets 只写「自动推断不出来的特例」（例如 gcsim 的别名 liftingwinds）；",
+    "能推断的（gcsim 名 = 英文名去掉非字母数字再小写）留给代码推断，不在这里铺一遍。"
+  ],
+
+  "characters": {
+    "varka": "10000128",
+    "prune": "10000132",
+    "nicole": "10000131",
+    "durin": "10000123"
+  },
+
+  "weapons": {},
+
+  "sets": {
+    "risingwinds": "15044"
+  },
+
+  "abilities": {
+    "10000128": {
+      "Windbound Execution": { "source": "elementalskill", "stage": "技能伤害" },
+      "Sturm und Drang Normal 0": { "source": "elementalskill", "stage": "狂飙突进·一段伤害" },
+      "Sturm und Drang Normal 1": { "source": "elementalskill", "stage": "狂飙突进·二段伤害" },
+      "Four Winds' Ascension": { "source": "elementalskill", "stage": "四风将起伤害" },
+      "Azure Devour": { "source": "elementalskill", "stage": "苍噬伤害" }
+    },
+    "10000132": {
+      "Ring-A-Ding-Ding! Hexhunter Chime DMG": { "source": "elementalskill", "stage": "叮铃铃·猎魔之音伤害" },
+      "Clang Clang! Witch-tribution Comes! DMG": { "source": "elementalskill", "stage": "咚锵锵·裁魔之惩伤害" },
+      "The Bell Tolls! The Hunt Is On!": { "source": "elementalburst", "stage": "技能伤害" },
+      "Witchlure Bell": { "source": "elementalburst", "stage": "诱巫饵铃伤害" }
+    },
+    "10000131": {
+      "Revelation: Uncreated Light": { "source": "elementalskill", "stage": "技能伤害" }
+    },
+    "10000123": {
+      "Confirmation of Purity": { "source": "elementalskill", "stage": "转变·白化之是伤害" },
+      "As the Light Shifts": { "source": "elementalburst", "stage": "白化法·如光流变伤害" },
+      "Dragon of White Flame": { "source": "elementalburst", "stage": "白焰之龙伤害" }
+    }
+  },
+
+  "ignored": {
+    "swirl-pyro": "扩散反应：由元素附着触发，不属于任何角色的天赋行，无法落到单个来源上"
+  }
+}

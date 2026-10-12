@@ -41,6 +41,12 @@ const FIXTURES = {
   'check-child-notes.mjs': ['data/法布尼-ft.json'],
   'check-derive-precise.mjs': ['public/data/char/chs/10000343.json'],
   'check-crit-flow.mjs': ['data/lunaris-config-2026-10-07.json'],
+  'check-gcsim-import.mjs': [
+    'public/data/charlist.json',
+    'public/data/weaponlist.json',
+    'public/data/artifactlist.json',
+    'public/data/char/chs/10000128.json',
+  ],
   'check-e2e.mjs': ['data/法布尼-ft.json'],
   'check-entry-note.mjs': ['data/法布尼-ft.json'],
   'check-expand-size.mjs': ['data/法布尼-ft.json'],
