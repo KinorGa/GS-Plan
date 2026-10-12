@@ -647,7 +647,7 @@ function Legend({ title, rows, hover, onHover, tone, L, compact = false }) {
                 and a percentage alone does not show relative size at a glance. */}
             <span className="h-[6px] min-w-0 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
               <span
-                className="block h-full rounded-full transition-all duration-150"
+                className="block h-full rounded-full transition-[width] duration-150"
                 style={{ width: `${r.pct}%`, backgroundColor: color, opacity: on ? 1 : dim ? 0.4 : 0.8 }}
               />
             </span>

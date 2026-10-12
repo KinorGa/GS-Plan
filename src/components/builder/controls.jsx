@@ -132,7 +132,7 @@ export function ConstellationRow({ icons, value, onChange, label }) {
             aria-label={c.name || `${label} ${n}`}
             aria-pressed={lit}
             onClick={() => onChange(n === value ? n - 1 : n)}
-            className="relative h-9 w-9 shrink-0 overflow-hidden rounded-full border transition-all duration-200"
+            className="relative h-9 w-9 shrink-0 overflow-hidden rounded-full border transition duration-200"
             style={{
               borderColor: lit ? '#e8c37a' : 'rgba(255,255,255,0.12)',
               backgroundColor: lit ? 'rgba(232,195,122,0.14)' : 'rgba(255,255,255,0.02)',
@@ -145,7 +145,7 @@ export function ConstellationRow({ icons, value, onChange, label }) {
               loading="lazy"
               // Unlit constellations are dimmed and desaturated rather than
               // hidden: the row should still show what is available.
-              className="h-full w-full object-contain p-1 transition-all duration-200"
+              className="h-full w-full object-contain p-1 transition-[opacity,filter] duration-200"
               style={{
                 opacity: lit ? 1 : 0.28,
                 filter: lit ? 'none' : 'grayscale(1) brightness(0.9)',

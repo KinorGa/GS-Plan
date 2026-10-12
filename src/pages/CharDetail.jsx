@@ -170,7 +170,7 @@ export default function CharDetail() {
               <button
                 key={tb.key}
                 onClick={() => setTab(tb.key)}
-                className={`rounded-xl px-6 py-2.5 text-sm font-semibold tracking-wide transition-all duration-200 ${
+                className={`rounded-xl px-6 py-2.5 text-sm font-semibold tracking-wide transition-colors duration-200 ${
                   tab === tb.key
                     ? 'bg-[#27272a] text-white ring-1 ring-white/10'
                     : 'text-white/40 hover:bg-white/5 hover:text-white'
@@ -313,7 +313,7 @@ function SkillCard({ skill }) {
   const shown = expanded ? rows : rows.slice(0, 12);
 
   return (
-    <div className="relative flex h-[700px] flex-col rounded-2xl border border-white/5 bg-[#0a0a0a] p-6 transition-all duration-300">
+    <div className="relative flex h-[700px] flex-col rounded-2xl border border-white/5 bg-[#0a0a0a] p-6 transition duration-300">
       {/* Icon + title, centered */}
       <div className="relative mb-6 flex shrink-0 flex-col items-center">
         <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-full p-2">
@@ -378,7 +378,7 @@ function SkillCard({ skill }) {
         {rows.length > 12 && (
           <button
             onClick={() => setExpanded((v) => !v)}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/5 bg-white/[0.02] py-2 text-xs font-medium text-white/40 transition-all duration-200 hover:bg-white/[0.05] hover:text-white/70"
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/5 bg-white/[0.02] py-2 text-xs font-medium text-white/40 transition-colors duration-200 hover:bg-white/[0.05] hover:text-white/70"
           >
             {expanded ? `▲ ${t.collapse}` : `▼ ${t.expand}`}
           </button>

@@ -13,7 +13,7 @@
 // from the card's own `onSummary` callback rather than recomputing them, so the
 // row and the card can never disagree.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import DamageCard, { defaultStats, reactionByKey } from '../DamageCard';
 import BuffCard, { buffKeyOf } from './BuffCard';
@@ -62,7 +62,7 @@ export function tint(color, alpha) {
   return `rgb(${m[1]} ${m[2]} ${m[3]} / ${alpha})`;
 }
 
-export default function DamageEntry({
+function DamageEntry({
   entry, team, teamScope, drops, onDropsChange, onCharChange, onRemove,
   onToggle, onExpand, onSummary, onStatsChange, index,
   // Write this row's own note. The store's `patchEntry`/`setChild`, threaded
@@ -189,9 +189,23 @@ export default function DamageEntry({
   // `char.talents` decides which column of the multiplier table is read -- see
   // `char-sources.multiplierAt`. It is absent on the standalone card page, where
   // the hardcoded `SOURCES` already carry their own numbers.
-  const sources = charData
-    ? buildSources(charData, char?.element, talentDamage, entry.charId, char?.talents)
-    : [];
+  /**
+   * MEMOISED, and that is a correctness-of-performance matter rather than a nicety.
+   *
+   * `buildSources` returns a fresh array and the two folds below return fresh objects,
+   * so before this the row produced new `sources`/`totals` on EVERY render. Those feed
+   * `panelStats` and `liveSummary`, whose identities therefore changed every render --
+   * and the reporting effect below uses `liveSummary` as a dependency. So every render
+   * of the row wrote the same summary back into the entry, which produced a new axis,
+   * which re-rendered the rows, which reported again. Measured on the 法布尼 axis: ONE
+   * selection click called `updateEntries` 117 times and recomputed the axis 9 times.
+   */
+  const sources = useMemo(
+    () => (charData
+      ? buildSources(charData, char?.element, talentDamage, entry.charId, char?.talents)
+      : []),
+    [charData, char, talentDamage, entry.charId],
+  );
   // `drops` defaults to empty rather than being required. The `cardOnly` branch
   // renders no drop zone and so has no drops to pass, but this line runs BEFORE
   // that branch is chosen -- so a missing array would throw while rendering a
@@ -205,16 +219,19 @@ export default function DamageEntry({
    * not in the team (a paste from another team) gets NO scope: it refuses, rather
    * than guessing at some other character's panel.
    */
-  const scopeOfDrop = (d) => {
+  const scopeOfDrop = useCallback((d) => {
     const ownerId = d?.source?.owner?.id;
     return (ownerId && teamScope?.get(ownerId)) || undefined;
-  };
+  }, [teamScope]);
   // The SAME per-drop folds the axis uses, so the row, the card and the axis total
   // resolve every formula identically. The label is `buffKeyOf`, so a
   // built-in zone (擢升) reads as a name rather than its internal key. A card whose
   // owner is not on the team folds against no scope -- the honest refusal, since
   // its owner's panel was never loaded.
-  const { totals, effective } = foldDrops(drops, scopeOfDrop);
+  const { totals, effective } = useMemo(
+    () => foldDrops(drops, scopeOfDrop),
+    [drops, scopeOfDrop],
+  );
   const summaryChips = Object.entries(totals).map(([stat, value]) => ({
     stat,
     value,
@@ -228,8 +245,11 @@ export default function DamageEntry({
   // Kept separate from `totals` on purpose: `totals` is keyed by panel FIELD and
   // is added into the panel, while these must not touch the panel at all -- they
   // are a factor, not a stat.
-  const customZones = foldZoneDrops(drops, scopeOfDrop, buffKeyOf);
-  const zoneMult = customZoneMultiplier(customZones);
+  const customZones = useMemo(
+    () => foldZoneDrops(drops, scopeOfDrop, buffKeyOf),
+    [drops, scopeOfDrop],
+  );
+  const zoneMult = useMemo(() => customZoneMultiplier(customZones), [customZones]);
 
   /**
    * Copy this entry's buffs into the in-page stash.
@@ -448,9 +468,15 @@ export default function DamageEntry({
    * character's data has loaded, and forwarding that back would be reporting the
    * value it was derived from.
    */
+  // The last object reported, so a render that produces an equal-but-new summary
+  // cannot start the report -> write -> render cycle again. The values themselves are
+  // compared inside `setEntrySummary`; this is the cheap identity guard in front of it.
+  const lastReported = useRef(null);
   useEffect(() => {
     if (expanded || cardOnly || !charData) return;
     if (!liveSummary || !Number.isFinite(liveSummary.perHit)) return;
+    if (lastReported.current === liveSummary) return;
+    lastReported.current = liveSummary;
     onSummary?.(liveSummary);
   }, [expanded, cardOnly, charData, liveSummary, onSummary]);
 
@@ -576,7 +602,7 @@ export default function DamageEntry({
           if (!onSelect) return;
           onSelect({ shift: e.shiftKey, meta: e.metaKey || e.ctrlKey });
         }}
-        className={`group flex items-center gap-3 rounded-xl border bg-[#0a0a0a] px-2.5 py-2 transition-colors ${
+        className={`cv-auto group flex items-center gap-3 rounded-xl border bg-[#0a0a0a] px-2.5 py-2 transition-colors ${
           over ? 'border-[#7fd4c1] bg-white/[0.03]' : 'border-white/10'
         } ${
           // The ring is drawn OUTSIDE the border so the row does not change size
@@ -831,27 +857,29 @@ export default function DamageEntry({
        * transient state, so the open row competed with the content it was opening
        * and collided with the SELECTION ring, which is already an accent border.
        *
-       * The app already has a glass idiom -- `bg-white/[0.025]` + `backdrop-blur-xl`
-       * + a deep shadow, used by the unit card, the artifact row and both dialogs --
-       * so the open row adopts it rather than inventing a fourth treatment. Glass
-       * also happens to be the right metaphor here: the row is FLOATING ABOVE the
-       * stack while it is open, and a translucent raised surface says exactly that.
+       * The app already has a glass idiom -- a translucent surface plus a deep
+       * shadow, used by the unit card, the artifact row and both dialogs -- so the
+       * open row adopts it rather than inventing a fourth treatment. Glass also
+       * happens to be the right metaphor here: the row is FLOATING ABOVE the stack
+       * while it is open, and a translucent raised surface says exactly that.
        *
-       * WHY IT NEEDS ITS OWN GRADIENT. `backdrop-blur` blurs whatever is BEHIND the
-       * element, and this page is a flat `bg-background` -- so blur alone would be
-       * invisible, which the artifact page already documents ("without a non-flat
-       * backdrop, `backdrop-blur` on the card is invisible"). The tint below gives
-       * the glass something to hold: a faint wash of the row's own element colour
-       * across the top, fading out, which reads as light hitting the panel and also
-       * carries which element this row is.
+       * NO `backdrop-blur` HERE. The idiom carries one everywhere else, but this page
+       * is a flat `bg-background`: blurring it returns the same pixels, so the filter
+       * is invisible while still costing a GPU pass PER ROW, and a long axis is many
+       * rows. The row drops it and keeps the tint; the dialogs keep it, because they
+       * float over other content.
+       *
+       * WHY IT NEEDS ITS OWN GRADIENT. The tint gives the glass something to hold: a
+       * faint wash of the row's own element colour across the top, fading out, which
+       * reads as light hitting the panel and also carries which element this row is.
        *
        * The border stays NEUTRAL and the same width in both states, so nothing
        * shifts when a row opens.
        */
-      className={`relative flex flex-col gap-2 overflow-hidden rounded-2xl border p-2 pl-3 transition-all duration-200 ${
+      className={`cv-auto relative flex flex-col gap-2 overflow-hidden rounded-2xl border p-2 pl-3 transition-[border-color,background-color,box-shadow] duration-200 ${
         over
-          ? 'border-[#7fd4c1]/60 bg-white/[0.06] shadow-2xl shadow-black/40 backdrop-blur-xl'
-          : 'border-white/15 bg-white/[0.03] shadow-xl shadow-black/40 backdrop-blur-xl'
+          ? 'border-[#7fd4c1]/60 bg-white/[0.06] shadow-2xl shadow-black/40'
+          : 'border-white/15 bg-white/[0.03] shadow-xl shadow-black/40'
       }`}
       style={{
         '--accent': el.color,
@@ -1293,3 +1321,6 @@ function CharPickerMenu({ anchor, team, current, onPick, onClose }) {
     document.body
   );
 }
+// MEMOISED for the same reason as `EntryGroup`, and it is the same row when the
+// entry is not a compound one -- `EntryGroup` renders straight through to this.
+export default memo(DamageEntry);

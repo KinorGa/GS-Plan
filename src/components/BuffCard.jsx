@@ -15,7 +15,7 @@
 // clicking, for touch and keyboard) expands it to reveal every buff row; an
 // optional editor lets each value be edited in place.
 
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { iconImg, talentImg, skillImg, itemImg, weaponIconImg, artifactIconImg, isStencilIcon } from '../game';
 import { useI18n } from '../i18n';
@@ -255,7 +255,7 @@ export function formatBuffValue(value, def) {
  * @param {Function} [onBuffsChange]   Called with the next buffs array.
  * @param {Function} [onSourceChange]  Called with the next source object.
  */
-export default function BuffCard({
+function BuffCard({
   source,
   buffs = [],
   editable = false,
@@ -446,7 +446,7 @@ export default function BuffCard({
 
       {/* ------------------------------------------------------ expanded rows */}
       <div
-        className={`grid transition-all duration-300 ease-out ${
+        className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out ${
           open ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
         }`}
       >
@@ -976,3 +976,7 @@ function BuffRow({ buff, L, editable, accent, onChange, onRemove, scope }) {
     </div>
   );
 }
+// MEMOISED because the pool renders one of these per source and the axis renders
+// another inside every drop zone: a card whose source, value and scope are all
+// unchanged has nothing to redraw.
+export default memo(BuffCard);

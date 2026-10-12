@@ -89,7 +89,7 @@ export default function PieceSlot({ slotKey, piece, sets, onChange }) {
         type="button"
         onClick={() => setOpenSet(true)}
         title={set ? L({ chs: '更换套装', en: 'Change set' }) : L({ chs: '选择套装', en: 'Choose set' })}
-        className="group/piece relative h-[76px] w-[76px] overflow-hidden rounded-xl border transition-all duration-200 hover:scale-[1.04]"
+        className="group/piece relative h-[76px] w-[76px] overflow-hidden rounded-xl border transition duration-200 hover:scale-[1.04]"
         style={{
           borderColor: set ? `${rq.color}66` : 'rgba(255,255,255,0.10)',
           background: set

@@ -42,7 +42,7 @@ export default function CharacterCard({ id, char, linkTo }) {
           e.preventDefault();
           e.stopPropagation();
         }}
-        className="absolute left-2 top-2 z-20 -translate-y-[5px] rounded-lg border border-white/10 bg-black/60 p-1.5 text-white/70 opacity-0 backdrop-blur-sm transition-all duration-200 hover:bg-black/80 hover:text-white group-hover:translate-y-0 group-hover:opacity-100"
+        className="absolute left-2 top-2 z-20 -translate-y-[5px] rounded-lg border border-white/10 bg-black/60 p-1.5 text-white/70 opacity-0 backdrop-blur-sm transition duration-200 hover:bg-black/80 hover:text-white group-hover:translate-y-0 group-hover:opacity-100"
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -68,7 +68,7 @@ export default function CharacterCard({ id, char, linkTo }) {
         className="aspect-[2/5]"
       >
         {/* Stats: collapsed by default, revealed on hover. */}
-        <div className="flex max-h-0 w-full flex-col gap-1 overflow-hidden opacity-0 transition-all duration-500 ease-out group-hover:max-h-[120px] group-hover:opacity-100">
+        <div className="flex max-h-0 w-full flex-col gap-1 overflow-hidden opacity-0 transition-[max-height,opacity] duration-500 ease-out group-hover:max-h-[120px] group-hover:opacity-100">
           <StatRow left={['hp_base', fmt(s.hp)]} right={['atk_base', fmt(s.atk)]} />
           <StatRow
             left={['def_base', fmt(s.def)]}

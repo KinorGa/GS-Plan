@@ -26,7 +26,7 @@
 // mounts a real `DamageCard` while expanded -- the same control a plain entry has
 // -- so the stage menu that chooses the row is the ONE implementation of that
 // logic. See `parentAsEntry` below for what it deliberately does not get.
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { elementOf } from '../game';
 import { ElementGlyph, ElementPicker } from './ElementGlyph';
 import DamageEntry, { tint } from './DamageEntry';
@@ -87,7 +87,7 @@ function ChildNotes({ items, onOpen }) {
   );
 }
 
-export default function EntryGroup({
+function EntryGroup({
   entry, index, team, teamScope, L,
   patchEntry, onRemove, onToggle, onExpand, onSummary, onStatsChange,
   selected = false, onSelect,
@@ -256,7 +256,7 @@ export default function EntryGroup({
     return (
       <div
         data-entry-loop={entry.id}
-        className={`rounded-2xl border transition-colors ${
+        className={`cv-auto rounded-2xl border transition-colors ${
           entry.expanded ? 'border-white/15 bg-white/[0.035]' : 'border-white/10 bg-white/[0.015]'
         }`}
       >
@@ -495,18 +495,22 @@ export default function EntryGroup({
      * rows and ordinary rows differ only by their content, and on a long axis the
      * open row is the one thing you need to find.
      *
-     * The treatment matches `DamageEntry`'s: the app's existing glass idiom (raised
-     * translucent surface, deep shadow, blur), a leading bar in the row's element
-     * colour, and a NEUTRAL hairline that is the same width in both states. An
-     * earlier version framed the open row in its element colour, which was too loud
-     * for a transient state and collided with the selection ring.
+     * The treatment matches `DamageEntry`'s: raised translucent surface, deep
+     * shadow, a leading bar in the row's element colour, and a NEUTRAL hairline that
+     * is the same width in both states. An earlier version framed the open row in
+     * its element colour, which was too loud for a transient state and collided with
+     * the selection ring.
      *
-     * The gradient gives the blur something to hold, because this page is a flat
-     * background and `backdrop-blur` alone would be invisible.
+     * NO `backdrop-blur`, for the same reason it was dropped from `DamageEntry`: the
+     * page is flat, so the filter costs a GPU pass per row and changes no pixels. The
+     * gradient below is what makes the surface read as raised.
+     *
+     * `cv-auto` skips off-screen rows entirely -- a long axis is mostly off screen.
+     * See the utility in `index.css` for why that is safe here.
      */
     <div
       data-entry-group={entry.id}
-      className={`relative overflow-hidden rounded-2xl border p-2 backdrop-blur-xl transition-all ${
+      className={`cv-auto relative overflow-hidden rounded-2xl border p-2 transition-[border-color,background-color,box-shadow] ${
         entry.expanded
           ? 'border-white/15 bg-white/[0.03] shadow-xl shadow-black/40'
           : 'border-white/10'
@@ -835,3 +839,10 @@ function ChildEntry({ child, index, total, parent, team, teamScope, L, setChild,
     </div>
   );
 }
+// MEMOISED because a row is expensive to render and almost always unchanged: the
+// side holds every entry on the axis and re-renders on any edit, selection or
+// language switch. Its props are kept stable by `planner-main` (see the row
+// handlers there) precisely so this comparison can succeed -- without that, the
+// inline arrows it used to receive made every row new on every render and this
+// wrapper did nothing.
+export default memo(EntryGroup);

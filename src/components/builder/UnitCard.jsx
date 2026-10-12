@@ -109,7 +109,7 @@ export default function UnitCard({ value, onChange, onRemove, selected = false, 
       // wash and a hairline highlight -- so the two halves of the panel share
       // one material. Rarity is still legible, from the wash, the stars and the
       // selection ring.
-      className="group/card relative w-[368px] shrink-0 snap-start cursor-pointer overflow-hidden rounded-2xl border bg-white/[0.025] backdrop-blur-xl transition-all duration-200"
+      className="group/card relative w-[368px] shrink-0 snap-start cursor-pointer overflow-hidden rounded-2xl border bg-white/[0.025] transition duration-200"
       style={{
         '--accent': q.color,
         borderColor: selected ? q.color : 'rgba(255,255,255,0.09)',

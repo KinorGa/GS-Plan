@@ -72,7 +72,7 @@ export default function CharacterArt({
       <div className={`absolute inset-0 bg-gradient-to-t ${scrim}`} />
 
       <div className="absolute inset-0 flex flex-col items-center justify-end p-2 text-center sm:p-3">
-        <div className="flex w-full translate-y-2 flex-col items-center transition-all duration-500 group-hover/art:translate-y-0">
+        <div className="flex w-full translate-y-2 flex-col items-center transition-transform duration-500 group-hover/art:translate-y-0">
           <h3 className="mb-1 text-base font-bold tracking-tight text-white drop-shadow-lg sm:mb-2 sm:text-[22px]">
             {displayName}
           </h3>

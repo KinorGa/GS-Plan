@@ -31,6 +31,17 @@
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+  /* The damage axis and the buff pool can hold hundreds of cards, nearly all of
+     them off screen. `content-visibility: auto` lets the browser skip layout and
+     paint for those, and `contain-intrinsic-size: auto` makes it remember each
+     row's last rendered height -- so a skipped row neither collapses the scrollbar
+     nor jumps when it scrolls back in. Only put this on a row whose geometry JS
+     does not read while it is hidden: the drop zones and pickers here work from
+     events and from an anchor that was just clicked, never from a hidden rect. */
+  .cv-auto {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 48px;
+  }
   /* Numeric inputs are compact here, so the native spinners only get in the way. */
   input[type='number']::-webkit-outer-spin-button,
   input[type='number']::-webkit-inner-spin-button {

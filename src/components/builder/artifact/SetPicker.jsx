@@ -58,7 +58,7 @@ export default function SetPicker({ open, onClose, onPick, value }) {
               title={L({ chs: s.chsName, en: s.enName })}
               aria-pressed={selected}
               onClick={() => { onPick(s.id); onClose(); }}
-              className="group relative flex flex-col items-center gap-1 overflow-hidden rounded-xl border p-2 transition-all duration-150 hover:bg-white/[0.07]"
+              className="group relative flex flex-col items-center gap-1 overflow-hidden rounded-xl border p-2 transition-colors duration-150 hover:bg-white/[0.07]"
               style={{
                 // No coloured top border any more: EVERY tile carried one in its
                 // rarity colour, which drowned the selection indicator and made

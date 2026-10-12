@@ -492,7 +492,24 @@ function Page() {
    *   ctrl / cmd    toggles this row, leaving the rest alone
    *   shift         extends from the anchor
    */
+  /**
+   * The selection the last COMMITTED render had, readable from an event handler.
+   *
+   * `selectEntry` used to close over `selectedIds` and `selectAnchor` directly, which
+   * put both in its dependency list -- so every selection change minted a new
+   * `selectEntry`, which minted a new `onSelect` for every row, which defeated the
+   * `React.memo` on `EntryGroup` and re-rendered the whole axis on every click. The
+   * refs let the handler read the current values without changing identity, so
+   * `onSelect` is stable for as long as the entries are.
+   */
+  const selectedIdsRef = useRef(selectedIds);
+  const selectAnchorRef = useRef(selectAnchor);
+  useEffect(() => { selectedIdsRef.current = selectedIds; }, [selectedIds]);
+  useEffect(() => { selectAnchorRef.current = selectAnchor; }, [selectAnchor]);
+
   const selectEntry = useCallback((id, { shift = false, meta = false } = {}) => {
+    const selectAnchor = selectAnchorRef.current;
+    const selectedIds = selectedIdsRef.current;
     if (shift && selectAnchor) {
       /**
        * THE RANGE IS TAKEN IN DISPLAY ORDER, not from a top-level scan.
@@ -551,7 +568,7 @@ function Page() {
     }
     setSelectedIds(new Set([id]));
     setSelectAnchor(id);
-  }, [entries, selectAnchor, selectedIds]);
+  }, [entries]);
 
   /**
    * Edit the ACTIVE axis's entries.
@@ -937,7 +954,10 @@ function Page() {
   // Through the segment, so a row inside a container can be removed from the axis
   // exactly as a top-level one can. A direct `list.filter` matched only the top level
   // and did nothing at all for a member.
-  const removeEntry = (id) => updateEntries((list) => Segment.remove(list, id));
+  const removeEntry = useCallback(
+    (id) => updateEntries((list) => Segment.remove(list, id)),
+    [updateEntries],
+  );
 
   // The effect above persists the empty list, so storage needs no separate clear.
   const clearAll = () => updateEntries(() => []);
@@ -1000,8 +1020,14 @@ function Page() {
    * sits. Written out here it needed three hand-rolled branches over `list` and
    * `list[].children`, and each one had to independently remember the same rule.
    */
-  const toggleEntry = (id) => updateEntries((list) => Segment.toggleOpen(list, id));
-  const expandEntry = (id) => updateEntries((list) => Segment.setOpen(list, id, true));
+  const toggleEntry = useCallback(
+    (id) => updateEntries((list) => Segment.toggleOpen(list, id)),
+    [updateEntries],
+  );
+  const expandEntry = useCallback(
+    (id) => updateEntries((list) => Segment.setOpen(list, id, true)),
+    [updateEntries],
+  );
 
   /**
    * Merge the SELECTED entries into one segment.
@@ -1233,6 +1259,58 @@ function Page() {
     replaceAxesInStore(normalised);
     setAxesState(normalised);
   }, []);
+
+  /**
+   * The row handlers, kept STABLE so a row that did not change can skip its render.
+   *
+   * Each of these used to be an arrow written inline in the `map` below, which mints a
+   * new function on every render -- and a new prop re-renders the row it was given to.
+   * So selecting one row rebuilt all of them and re-rendered the whole axis.
+   *
+   * `selectHandlers` is the one that needs the entry id, so it is a map rebuilt when
+   * `entries` changes. That is right: a new entry needs a handler, and any edit
+   * changes the axis anyway.
+   */
+  const selectHandlers = useMemo(() => {
+    const byId = new Map();
+    for (const e of entries) byId.set(e.id, (opts) => selectEntry(e.id, opts));
+    return byId;
+  }, [entries, selectEntry]);
+
+  /** Stable for the same reason: an arrow here would re-render every row. */
+  const clearNaming = useCallback(() => setNamingLoop(null), []);
+
+  /**
+   * Store a row's edited stat panel.
+   *
+   * Lifted out of the `map` for the reason above -- it takes the ids as ARGUMENTS, so
+   * it needs nothing from the row it used to be written beside.
+   *
+   * A LEAF ROW stores the overrides on itself; the edit can land at any depth (top
+   * level, or inside a loop), so it goes through `Segment.update` exactly as
+   * `patchEntry` does. A direct `list.map` used to be enough for a top-level row and
+   * silently dropped the SAME edit for a row inside a loop -- the failure this
+   * codebase keeps meeting.
+   */
+  const reportStats = useCallback((id, overrides, parentId) => {
+    if (!parentId) {
+      updateEntries((list) => Segment.update(list, id, (entry) => ({
+        ...entry,
+        statOverrides: overrides,
+      })));
+      return;
+    }
+    // A PART's overrides belong to the CHILD. The parent is what `Segment` can
+    // reach, so this is addressed to the parent and applied to the matching child
+    // -- and reached through the container, so a compound row inside a loop works
+    // too.
+    updateEntries((list) => Segment.update(list, parentId, (entry) => ({
+      ...entry,
+      children: (entry.children || []).map((c) => (
+        c.id === id ? { ...c, statOverrides: overrides } : c
+      )),
+    })));
+  }, [updateEntries]);
 
   return (
     <div className="min-h-screen bg-background px-5 py-6">
@@ -1571,7 +1649,7 @@ function Page() {
                     // Whether this row is part of the copy/paste selection, and
                     // the click that changes it.
                     selected={selectedIds.has(e.id)}
-                    onSelect={(opts) => selectEntry(e.id, opts)}
+                    onSelect={selectHandlers.get(e.id)}
                     axis={axis}
                     // The loop actions. An ordinary entry ignores them; a loop row
                     // is the only thing that renders the controls for them.
@@ -1579,7 +1657,7 @@ function Page() {
                     onDissolveLoop={dissolveLoop}
                     onRenameLoop={renameLoop}
                     autoName={namingLoop === e.id}
-                    onNamed={() => setNamingLoop(null)}
+                    onNamed={clearNaming}
                     onStartRename={setNamingLoop}
                     patchEntry={patchEntry}
                     onRemove={removeEntry}
@@ -1597,33 +1675,7 @@ function Page() {
                     //
                     // `parentId` comes through for a CHILD, whose overrides belong
                     // to the child and not to the entry that contains it.
-                    onStatsChange={(id, overrides, parentId) => {
-                      // A LEAF ROW stores the overrides on itself; the edit can
-                      // land at any depth (top level, or inside a loop), so it
-                      // goes through `Segment.update` exactly as `patchEntry`
-                      // does. A direct `list.map` used to be enough for a
-                      // top-level row and silently dropped the SAME edit for a
-                      // row inside a loop -- the failure this codebase keeps
-                      // meeting.
-                      if (!parentId) {
-                        updateEntries((list) => Segment.update(list, id, (entry) => ({
-                          ...entry,
-                          statOverrides: overrides,
-                        })));
-                        return;
-                      }
-                      // A PART's overrides belong to the CHILD. The parent is
-                      // what `Segment` can reach, so this is addressed to the
-                      // parent and applied to the matching child -- and reached
-                      // through the container, so a compound row inside a loop
-                      // works too.
-                      updateEntries((list) => Segment.update(list, parentId, (entry) => ({
-                        ...entry,
-                        children: (entry.children || []).map((c) => (
-                          c.id === id ? { ...c, statOverrides: overrides } : c
-                        )),
-                      })));
-                    }}
+                    onStatsChange={reportStats}
                   />
                 ))}
 

@@ -424,7 +424,7 @@ export default function BuffPool({
               // The source key, so a test (or a future feature) can name the card it is
               // looking at. `libKey` identifies the source rather than the card instance.
               data-pool-source={card.libKey || card.key}
-              className="cursor-grab active:cursor-grabbing"
+              className="cv-auto cursor-grab active:cursor-grabbing"
             >
               {/* The source IS the card's `source` prop: `buff-sources.js` builds
                   them in that shape, so no wrapper object is needed here. */}

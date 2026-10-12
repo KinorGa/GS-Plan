@@ -94,3 +94,6 @@ desktop.ini
 
 # Chrome profiles for the browser tests -- disposable, see scratch/_profiles.mjs
 tmp/
+
+# Screenshots the browser tests write for eyeballing. Disposable output, not source.
+tests/*.png

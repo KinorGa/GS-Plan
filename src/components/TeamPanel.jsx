@@ -283,7 +283,7 @@ function CharacterPicker({ open, onClose, onPick }) {
               // border-top is gone: across 137 tiles every one carried a
               // coloured bar, which read as chrome and made the grid noisy.
               // Rarity is still shown, by the wash behind the portrait.
-              className="group relative flex flex-col items-center overflow-hidden rounded-xl border border-white/8 bg-white/[0.02] backdrop-blur-md transition-all duration-200 hover:scale-[1.04] hover:border-white/25"
+              className="group relative flex flex-col items-center overflow-hidden rounded-xl border border-white/8 bg-white/[0.02] transition duration-200 hover:scale-[1.04] hover:border-white/25"
             >
               <span
                 aria-hidden
