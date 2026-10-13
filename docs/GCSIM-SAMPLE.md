@@ -118,7 +118,7 @@
 `status: rejected` + `reason: ...` 表示这个状态**没有生效**（四风原典、图莱杜拉的回忆），
 不能挂卡。
 
-### 三种「状态」形态
+### 四种「状态」形态
 
 1. **普通状态**（绝大多数）：直接是 `[行, 行, ...]`，数值就在行里。
 2. **`resist_mods`**：和 `pre_damage_mods` 同一种「名字 + 行」嵌套形状，装的是减抗。**日志里带数值**
@@ -142,6 +142,10 @@
 
    导入器把它拆开后交给和普通状态同一条路径（`absorb`），所以每一击的 `dmg%` 都进到该行的
    「通用伤害加成」里。
+4. **`def_mods`**：同样的嵌套形状，装的是**减防**（`amount: -0.3`，不带 `ele`——减防对
+   所有命中生效，不分元素）。读法和 `resist_mods` 一样，`amount` 直读日志。注意这是敌方的
+   debuff（杜林 C6 的 30%），和 calc 事件里攻击方的 `ignore_def`（无视防御）是两个因子，
+   在防御乘区里**相乘**。
 
 ### calc 事件 —— 数值核对的金矿
 
@@ -180,23 +184,49 @@
 }
 ```
 
-对于不暴击的一击，可以直接验证公式：
+完整公式链（对当前样本 `tmp/serve_sample.json.gz` 全部 625 个 damage 事件逐条验证过，分毫不差）：
 
 ```
-damage = total_scaling × talent × (1 + bonus_dmg) × def_mod × res_mod
-       = base_dmg      × (1 + bonus_dmg) × def_mod × res_mod
+damage = (total_scaling × talent + flat_dmg) × (1 + bonus_dmg) × res_mod × def_mod × critMult
+total_scaling = base_atk × (1 + atk_per) + flat_atk
+def_mod = (100 + 角色等级) / ( (100 + 角色等级) + (100 + 敌人等级) × (1 - 减防) × (1 - 无视防御) )
+critMult = is_crit ? 1 + cd : 1
 ```
+
+两个坑，都踩过：
+
+- **增伤区是 `bonus_dmg`，不是 `ele_per`。** `ele_per` 只有元素伤害加成那部分，通用 dmg%
+  （杜林 C4 的 0.40）不在里面；拿 `ele_per` 验算会有 392/625 对不上。
+- **`flat_dmg` 和 `ignore_def` 只出现在 calc 事件里**，damage 事件的状态列表完全看不到——
+  见下一节。
 
 这也是核对本项目 `src/lib/damage.js` 的天然断言点：`base_atk / flat_atk / atk_per / cr / cd /
-bonus_dmg / def_mod / res_mod / talent` 每一项都能和本地面板逐项对上。
+bonus_dmg / def_mod / res_mod / talent / flat_dmg / ignore_def` 每一项都能和本地面板逐项对上。
+
+#### calc 独有的两个因子：`flat_dmg` 与 `ignore_def`
+
+damage 事件的状态列表记得住大多数增益，但有两笔钱**只**写在 calc 事件上，任何状态名都不提：
+
+- **`flat_dmg`（附加伤害值）**：加在倍率乘区之后、增伤区之前的一笔定值。样本里它有三个来源：
+  尼可 C4 先导之佑（尼可攻击力的 70%）、尼可 p4（奥迹造影 +300% 尼可攻击力，且 C4/C1 对
+  奥迹造影不生效）、杜林 C1 轮变启迪（杜林攻击力的 60%，只给队友）。注意尼可 C4 对
+  **每个角色各自**随她的爆发周期开关——同一轮里法尔伽有 C4+C1、仅 C1、仅 C4 三种命中；
+  杜林自己的 `flat_dmg` 则恒等于 C4 的量（他吃不到自己的 C1）。
+- **`ignore_def`（无视防御）**：防御乘区里 `(1 - 无视防御)` 那个因子。样本里 0.4 = 尼可 C6
+  （全队），杜林自己爆发期间 0.7 = 尼可 C6 + 杜林 C6（只加他自己），他早期爆发还有单独的
+  0.3。注意它和 `def_mods` 里的**减防**（杜林 C6 的 30%，敌方 debuff）是两个东西：
+  减防进 `(1 - 减防)`，无视防御进 `(1 - 无视防御)`，两者**相乘**，不相加。
+
+导入器怎么把它们变回来源卡，见 [GCSIM.md](./GCSIM.md) 的「calc 独有的两个因子」。
 
 ## 已知缺口（截至当前）
 
-没有。之前记在这里的两条都已修复：
+没有。之前记在这里的都已修复：
 
 - ~~`pre_damage_mods` 被跳过~~：现在拆开走普通状态那条路径，逐击的 `dmg%` 进到行里；
 - ~~多段招式并成一行、只算第 0 段~~：现在按一次施放（`logs.source_frame`）归组，施放内**每一击**
-  都是一段，拆成父子条目，每段带自己的 `scaling`（相同数值的几击不合并成 `×2`）。
-
-剩下的差异只有「本地天赋表 / gcsim 用的列不同」这一条，由 `scaling` 兜住——
-见 [GCSIM.md](./GCSIM.md) 的「倍率：以 gcsim 自己的数为准」。
+  都是一段，拆成父子条目，每段带自己的 `scaling`（相同数值的几击不合并成 `×2`）；
+- ~~`def_mods`（减防）不认识~~：现在和 `resist_mods` 同一条路径拆开，`amount` 直读日志；
+- ~~`flat_dmg` / `ignore_def` 完全丢失~~：这两个因子只在 calc 事件上（见上节），丢失时
+  每行只剩 gcsim 的 42%~53%。现在伤害模型有 `flatDmg` 字段，导入器把它们拆回来源卡
+  （[GCSIM.md](./GCSIM.md) 的「calc 独有的两个因子」），全部 411 行与 gcsim 的偏差 ≤0.2%。
