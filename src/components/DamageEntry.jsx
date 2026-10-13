@@ -1206,7 +1206,7 @@ function DamageEntry({
 // char-sources.js keys sources as `normalattack` / `elementalskill` /
 // `elementalburst`, so those are matched first; the `kind` values are accepted
 // too, since the standalone damage card labels its own sources that way.
-const SOURCE_KIND_LABEL = (key, L) =>
+export const SOURCE_KIND_LABEL = (key, L) =>
   ({
     normalattack: L({ chs: '普通攻击', en: 'Normal Attack' }),
     elementalskill: L({ chs: '元素战技', en: 'Elemental Skill' }),

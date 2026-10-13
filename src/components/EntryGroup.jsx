@@ -29,7 +29,7 @@
 import { memo, useState } from 'react';
 import { elementOf } from '../game';
 import { ElementGlyph, ElementPicker } from './ElementGlyph';
-import DamageEntry, { tint } from './DamageEntry';
+import DamageEntry, { tint, SOURCE_KIND_LABEL } from './DamageEntry';
 
 /**
  * Every note written BELOW a row, so the row can repeat it once it is collapsed.
@@ -180,6 +180,24 @@ function EntryGroup({
     && entry.summary.sourceKey === heldKey
     && (entry.summary.stageIndex ?? 0) === (heldStage ?? 0)
   ) ? entry.summary.parts : null;
+
+  /**
+   * WHAT THIS ROW IS: which skill, and which of its stages.
+   *
+   * `summary.stage` is the CARD's report, and an IMPORTED row has none until its
+   * picker mounts -- so the header read "—" and then CHANGED to the stage name the
+   * moment the row was expanded. That reads as "expanding turned my row into
+   * 苍噬伤害", when nothing about the row changed at all.
+   *
+   * The importer writes the source's own label (`sourceLabel`) and the stage it
+   * picked, so the row can name itself from the file it came from, on the first
+   * paint and every one after. `summary.stage` still wins once the card has
+   * reported one, because that is the row the user is looking at right now.
+   */
+  const heldStageLabel = entry.summary?.sourceLabel?.stages?.[
+    heldStage ?? entry.picked?.stageIndex ?? 0
+  ];
+  const parentStageLabel = entry.summary?.stage || heldStageLabel || null;
 
   /**
    * A menu row was clicked. Hold the choice until the card reports its parts.
@@ -602,11 +620,16 @@ function EntryGroup({
         </span>
         <span className="flex min-w-0 flex-1 items-center gap-3">
           <span className="flex min-w-0 shrink flex-col leading-tight">
+            {/* THE KIND AND THE ROW TYPE, so "多段伤害" is never a label with no
+                subject: the reader can see it is 元素战技's 苍噬伤害 before
+                opening it, exactly as a single-stage row reads. */}
             <span className="block text-[9px] font-bold uppercase tracking-wider text-[#7fd4c1]">
+              {SOURCE_KIND_LABEL(entry.summary?.sourceKey, L)}
+              {' · '}
               {L({ chs: '多段伤害', en: 'Multi-part hit' })}
             </span>
             <span className="block truncate text-[12px] font-medium text-white">
-              {entry.summary?.stage ? L(entry.summary.stage) : '—'}
+              {parentStageLabel ? L(parentStageLabel) : '—'}
             </span>
           </span>
           {!entry.expanded && (

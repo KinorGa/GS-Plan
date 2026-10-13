@@ -907,7 +907,20 @@ export default function DamageCard({
         {menuOpen && (
           <div
             data-stage-menu
-            className="absolute left-0 right-0 top-[calc(100%+6px)] z-30 overflow-y-auto rounded-xl border border-white/10 bg-[#141418] p-1.5 shadow-2xl shadow-black/80 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/15 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-1.5"
+            /* IN THE PARENT'S PICKER THE LIST IS IN FLOW, not an overlay.
+             *
+             * That picker is one short column, and the CHILDREN sit directly
+             * beneath it inside the row's `overflow-hidden` box -- so an
+             * absolutely-positioned list hung straight over them and hid both
+             * children rows completely (measured). Letting the list push the
+             * content down keeps every child readable while it is open, which is
+             * the whole point of opening it.
+             *
+             * The FULL card keeps the overlay: it is its own 470px box, and its
+             * list is capped by `menuMaxH.stage` to fit inside that box. */
+            className={`overflow-y-auto rounded-xl border border-white/10 bg-[#141418] p-1.5 shadow-2xl shadow-black/80 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/15 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-1.5 ${
+              sourceOnly ? 'relative mt-2' : 'absolute left-0 right-0 top-[calc(100%+6px)] z-30'
+            }`}
             // THE MENU IS WIDER THAN THE COLUMN IT HANGS FROM.
             //
             // It tracks the column's width (`left-0 right-0`) but is allowed to
@@ -918,7 +931,7 @@ export default function DamageCard({
             // room for its numbers. The minimum below fits the longest pair in the
             // dataset with the name intact; `max-w` keeps it from running off the
             // card, which is `overflow-hidden` and would clip it.
-            style={{ maxHeight: sourceOnly ? 360 : menuMaxH.stage, minWidth: 340, maxWidth: 470 }}
+            style={{ maxHeight: sourceOnly ? 320 : menuMaxH.stage, minWidth: 340, maxWidth: 470 }}
           >
           {sources.map((s) => (
             <div key={s.key}>

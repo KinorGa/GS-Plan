@@ -303,6 +303,15 @@ eq(parent.children.map((c) => c.partIndex).join(','), '0,1', 'children are index
 eq(parent.children[0].element, 'Anemo', 'part 1 keeps its own element');
 eq(parent.children[1].element, 'Cryo', 'part 2 keeps its own element');
 eq(parent.children.every((c) => !c.drops.length), true, 'a log with no statuses attaches no cards');
+// The row must be able to NAME ITSELF without a card: the parent header reads
+// the stored summary, and a card only reports one once the row is expanded --
+// which is why an imported compound row showed "—" until it was opened, and
+// then appeared to change into 苍噬伤害 on expand.
+eq(
+  Boolean(parent.summary.sourceLabel?.stages?.[parent.picked?.stageIndex]),
+  true,
+  'the parent carries its own stage label (the header can name it before any card mounts)'
+);
 
 // The numbers themselves: the axis must compute each child at GCSIM'S
 // coefficient, not at the table's -- that is the whole point of \`scaling\`.
