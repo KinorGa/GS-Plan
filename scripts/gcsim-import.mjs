@@ -353,49 +353,28 @@ export function importGcsim({
     // part at a situational multiplier (法尔伽's 狂飙突进 220%, its C1's 200%).
     // A single row holding one `stageIndex` and no `partIndex` computed part 0
     // for EVERY hit -- which is why a multi-part skill showed one wrong number
-    // and its segments did not match. So a run with more than one distinct
-    // (multiplier, element) pair becomes a PARENT with one child per pair, each
-    // child carrying that hit's own multiplier, buffs and crit mode.
-    // A PART IS A SET OF IDENTICAL HITS. Grouping by (talent, element) alone is
-    // not enough: a stack can move BETWEEN two hits of the same part (gcsim's
-    // A4/C6 CD on varka steps 60->80 mid-cast), and folding those two into one
-    // child makes the first value win -- the row then misses gcsim's own total
-    // by the step. The CRIT OUTCOME matters for the same reason: a child holding
-    // one crit and one non-crit hit can only report their AVERAGE, not what the
-    // log rolled. So the key also carries the hit's crit outcome AND its whole
-    // buff signature: two hits merge only when they are the same in every way
-    // that moves the number. A part that drifted therefore becomes two children
-    // with the same coefficient and different cards, which is exactly what the
-    // log says happened.
-    const buffSig = (h) => [...h.buffs.entries()]
-      .map(([id, p]) => `${id}=${p.value}`)
-      .sort()
-      .join('&');
-    const groups = [];
-    for (const h of events) {
-      const key = `${h.talent}|${h.ele}|${h.crit}|${buffSig(h)}`;
-      let g = groups.find((x) => x.key === key);
-      if (!g) {
-        g = { key, talent: h.talent, ele: h.ele, count: 0, crits: [], buffs: new Map() };
-        groups.push(g);
-      }
-      g.count += 1;
-      g.crits.push(h.crit);
-      for (const [id, p] of h.buffs) {
-        const prev = g.buffs.get(id);
-        if (prev && prev.value !== p.value) {
-          // Two hits of one part disagree on a value (a stack count that moved
-          // between them). The FIRST wins and the drift is reported rather than
-          // silently averaged.
-          pushBuffNote({
-            kind: 'buff-value-drift', status: String(id).split('\u0000')[0], source: p.source,
-            key: p.key, from: prev.value, to: p.value, ability,
-          });
-          continue;
-        }
-        g.buffs.set(id, p);
-      }
-    }
+    // and its segments did not match. So a cast with more than one hit becomes
+    // a PARENT with ONE CHILD PER HIT, each child carrying that hit's own
+    // multiplier, buffs and crit mode.
+    //
+    // ONE HIT IS ONE PART -- a repeated hit is NOT folded into a `×2` child.
+    // Two hits used to merge whenever they agreed on (talent, element, crit,
+    // buffs) and the row drew them as `×2 = ...`. That read well until the two
+    // hits were not the same: a reaction on the FIRST hit moves its damage while
+    // the status list the log hands the second does not name it, so the pair
+    // merged on a signature that MISSED the change and the row reported a number
+    // NEITHER hit rolled. Whether a hit reacted is not a fact a merged row can
+    // hold -- and the SAME skill already split when a stack moved mid-cast (苍噬's
+    // buff signature drifted between its two halves), so one component drew two
+    // ways. Splitting every hit is uniform and auditable: the log lists N hits,
+    // the row holds N parts, and each part keeps its own cards.
+    const groups = events.map((h) => ({
+      talent: h.talent,
+      ele: h.ele,
+      count: 1,
+      crits: [h.crit],
+      buffs: new Map(h.buffs),
+    }));
 
     if (groups.length <= 1) {
       // ONE NUMBER: the ordinary row, exactly as before -- plus a multiplier

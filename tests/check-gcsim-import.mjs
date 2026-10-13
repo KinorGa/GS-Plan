@@ -247,11 +247,19 @@ eq(bids[0].drops[0].buffs[0].value, 18, "a fraction becomes the panel's percent 
 eq(bids[0].drops[0].source.kind, 'artifact2', 'the card keeps the source kind the pool renders');
 eq(bids[0].drops[0].source.owner.id, charId, 'and the owner, so a formula would read the right panel');
 
-// 2. a status listed on several hits of one row is ONE mod.
-eq(keys(bids[1]).length, 1, 'row 2 carries one card');
-eq(bids[1].drops[0].buffs.length, 1, 'the repeated status is one buff, not two');
-eq(bids[1].drops[0].buffs[0].value, 80, "C6 CRIT DMG, from the log's own 0.80");
-eq(bids[1].drops[0].source.rank, 'C6', 'the constellation keeps its rank chip');
+// 2. a repeated hit is TWO INDEPENDENT PARTS, not one `×2` row.
+//
+// gcsim logged two Azure Devour hits on the same frame. They used to merge into
+// one child carrying `hits: 2`, which the row drew as `×2 = ...`; a reaction or a
+// stack that moved BETWEEN the two could then only be reported as their average.
+// The row now holds one child per hit, and each keeps its own card -- the parent
+// owns none, which is the whole reason the split exists.
+eq(bids[1].children?.length, 2, 'two logged hits become two independent parts');
+eq(bids[1].drops.length, 0, 'the parent holds no card of its own');
+eq(bids[1].children.every((c) => c.drops.length === 1), true, 'each part keeps its own card');
+eq(bids[1].children[0].drops[0].buffs.length, 1, 'the status is one buff, not two');
+eq(bids[1].children[0].drops[0].buffs[0].value, 80, "C6 CRIT DMG, from the log's own 0.80");
+eq(bids[1].children[0].drops[0].source.rank, 'C6', 'the constellation keeps its rank chip');
 
 // 3. the 4-piece has two statuses; both land on its one card.
 eq(keys(bids[2]).join(' | '), 'artifact:15044:2 | artifact:15044:4', 'row 3 cards');
@@ -356,6 +364,27 @@ near(
 );
 eq(computed.parts[1].perHit > computed.parts[0].perHit, true, 'the larger coefficient hits harder');
 
+/* --- 6b. a repeated hit splits too, not just a distinct one ---------------- */
+console.log('\n6b. a repeated hit is one part per hit, not one `×2` row');
+// THE ROOT OF "it shows four when collapsed but two when expanded". The TABLE
+// spells a repeat (`168.48%*2`) and the row kept it as `hits: 2`, while a gcsim
+// run logs each hit, so the same talent read `4 段` imported and `2 段` from the
+// table. Both now split: a part is always ONE hit.
+const repeated = {
+  ...sample,
+  logs: [
+    { event: 'damage', char_index: 0, frame: 50, logs: { abil: 'Azure Devour', ele: 'anemo', crit: true, damage: 100 } },
+    { event: 'calc', char_index: 0, frame: 50, logs: { abil: 'Azure Devour', talent: 1.5 } },
+    { event: 'damage', char_index: 0, frame: 50, logs: { abil: 'Azure Devour', ele: 'anemo', crit: true, damage: 100 } },
+    { event: 'calc', char_index: 0, frame: 50, logs: { abil: 'Azure Devour', talent: 1.5 } },
+  ],
+};
+const rep = importGcsim({ sample: repeated, mapping, catalogues, charData, talentDamage, setBonuses });
+const repRow = rep.doc.axes[0].entries[0];
+eq(repRow.children?.length, 2, 'two identical hits are still two parts, not one ×2');
+eq(repRow.summary.parts.every((p) => p.hits === 1), true, 'every part is exactly ONE hit');
+eq(repRow.summary.partCount, 2, 'the row counts its parts, not its kinds of hit');
+
 /* --- 7. one cast, however its hits are interleaved -------------------------- */
 console.log('\n7. a cast is a cast, even when another ability lands between its hits');
 // THE BUG THIS GUARDS. 杜林's burst fires its three parts on ONE frame, but gcsim
@@ -384,6 +413,13 @@ const burst = woven.doc.axes[0].entries
 eq(Boolean(burst), true, 'the cast is one entry');
 eq(burst.children?.length, 3, 'all three parts of the cast stay in ONE entry');
 eq(burst.summary.parts.map((p) => p.mult).join(','), '1.5,3,4.5', "each part keeps gcsim's own coefficient");
+// AND EACH PART REPORTS ITS OWN INDEX. The axis used to hand back the CLAMPED
+// table index, so a row with more children than the table has parts collapsed
+// onto the last one: `EntryGroup` matches a child to its figure by index, so the
+// row printed a dash where a part was missing and the SAME number twice where two
+// children shared an index. 苍噬's drifted cast measured exactly that.
+const wovenParts = computeAxis(woven.doc.axes[0].entries, crew, catalogue, talentDamage).byId.get(burst.id).parts;
+eq(wovenParts.map((p) => p.partIndex).join(','), '0,1,2', 'a part keeps its own index past the table\'s part count');
 
 console.log(bad ? `\n${bad} PROBLEMS` : '\nall checks passed');
 process.exit(bad ? 1 : 0);

@@ -70,6 +70,16 @@ export function parseMultiplierParts(raw) {
  * spelled `x2` here. The dataset itself only ever uses `*`.
  */
 export function stageMultiplierText(stage) {
+  // THE ROW'S OWN TERMS, repeats intact (`168.48%x2+90.72%x2`). `parts` below is
+  // one entry per HIT -- a repeat is already split apart -- so reading it here
+  // would spell the row `168.48%+168.48%+90.72%+90.72%` and the menu is exactly
+  // where the user tells a repeated hit from two different ones.
+  const terms = stage?.terms;
+  if (Array.isArray(terms) && terms.length) {
+    return terms
+      .map((p) => `${(p.mult * 100).toFixed(2)}%${p.hits > 1 ? `x${p.hits}` : ''}`)
+      .join('+');
+  }
   const parts = stage?.parts;
   if (Array.isArray(parts) && parts.length) {
     return parts
@@ -183,36 +193,55 @@ export function buildSources(
     const stages = Object.entries(skill.multipliers)
       .map(([name, values]) => {
         const raw = multiplierAt(values, level);
-        const parts = parseMultiplierParts(raw);
-        if (!parts.length) return null;
+        const terms = parseMultiplierParts(raw);
+        if (!terms.length) return null;
 
         // Rows like "三段伤害" hit more than once; the label carries the count.
         //
-        // This heuristic is only trusted for a SINGLE-part row. A compound row
+        // This heuristic is only trusted for a SINGLE-term row. A compound row
         // spells its own repeat counts out (`*2`), and applying the name-based
         // guess on top of those would multiply a count the data already stated --
         // "三段伤害 80.15%+148.85%" is two different hits, not the third hit of
         // three, and reading 三 as `x2` here would double it.
-        const namedHits = parts.length === 1 && /三段|3/.test(name) ? 2 : 1;
-        const hits = namedHits * parts[0].hits;
+        const namedHits = terms.length === 1 && /三段|3/.test(name) ? 2 : 1;
+        const hits = namedHits * terms[0].hits;
+
+        // ONE HIT IS ONE PART.
+        //
+        // A repeat used to stay ON the row as `hits: 2` and the row drew it as
+        // `×2 = ...` under the per-hit figure. That reads well until the two hits
+        // are not actually the same: a reaction on the FIRST one moves its damage
+        // and a merged row cannot hold that -- it would report a number neither
+        // hit rolled. The IMPORTED rows already split, one child per logged hit,
+        // so the SAME talent read `2 段` (each `x2`) from the table and `4 段` from
+        // a gcsim run, and expanding a row could drop it back to two. So the table
+        // row splits the same way: each `*N` becomes N parts and a part is always
+        // ONE hit. `168.48%*2+90.72%*2` is therefore FOUR parts, all independent.
+        const expanded = terms.length === 1
+          ? Array.from({ length: hits }, () => ({ mult: terms[0].mult, hits: 1 }))
+          : terms.flatMap((t) => Array.from(
+            { length: t.hits }, () => ({ mult: t.mult, hits: 1 })
+          ));
 
         return {
           chs: name,
           en: name,
-          // `mult`/`hits` stay the FIRST part's numbers, so every existing
-          // consumer keeps working unchanged and a single-part row -- which is
-          // almost all of them -- is described exactly as before.
-          mult: parts[0].mult,
+          // `mult`/`hits` stay the FIRST term's numbers, so a single-part row --
+          // which is almost all of them -- is described exactly as before.
+          mult: terms[0].mult,
           hits,
-          // `null` for a SINGLE-part row, an array for a compound one.
+          // The row's own text, repeats intact. The MENU reads this; `parts`
+          // below is already split per hit and can no longer spell a repeat.
+          terms,
+          // `null` for a SINGLE-hit row, an array for a multi-part one.
           //
-          // Every consumer therefore branches (`stageMultiplierText` below,
+          // Every consumer therefore branches (`stageMultiplierText` above,
           // `DamageEntry`'s row recompute, the card's part pinning), and that is
           // deliberate: "one hit" and "the first of several" are different facts,
           // and flattening them into a one-element array would make every reader
           // carry a length check anyway while hiding which case it had.
-          parts: parts.length > 1
-            ? parts.map((p, i) => ({ ...p, partIndex: i }))
+          parts: expanded.length > 1
+            ? expanded.map((p, i) => ({ ...p, partIndex: i }))
             : null,
         };
       })

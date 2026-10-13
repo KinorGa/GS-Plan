@@ -148,7 +148,15 @@ function computePart({
   });
 
   return {
-    partIndex: idx,
+    // THE CHILD'S OWN INDEX, not the clamped `idx`. `idx` exists only to pick a
+    // fallback coefficient out of the table; reporting it broke every caller that
+    // matches a child to its figure BY INDEX -- `EntryGroup`'s `partRows`. An
+    // imported compound row can have MORE children than the table has parts (a cast
+    // whose hits drifted in buffs or crit, so they are not one hit), and then
+    // `idx` collapsed them onto the last part: child 2 matched nothing (the row
+    // printed a dash) and child 3 matched child 1's figure, so 苍噬 showed the same
+    // number twice with a dash between them.
+    partIndex: partIndex || 0,
     element: usedElement,
     perHit: r.perHit,
     total: r.total,
