@@ -7,7 +7,9 @@
 //
 // What is checked, in order of what would break a user silently:
 //   - a mapped hit becomes a row with the right source, stage and HIT COUNT
-//   - consecutive hits of one ability merge, and a mixed-crit run reads `avg`
+//   - the hits of ONE cast (same `source_frame`) become one entry even when
+//     another ability lands between them, and a part that is not the same hit
+//     twice (a moved stack, a mixed crit) keeps one child per distinct outcome
 //   - a reaction is ignored, but a constellation hit is REPORTED, never dropped
 //     without a trace
 //   - the team round-trips: effective talent levels (the C3/C5 +3), weapon id,
@@ -69,7 +71,8 @@ const sample = {
   target_details: [{ level: 110 }],
   logs: [
     { event: 'damage', char_index: 0, frame: 10, logs: { abil: 'Windbound Execution', ele: 'anemo', crit: true, damage: 100 } },
-    // Two back-to-back hits of one ability: must merge into ONE row of 2.
+    // Two hits of one ability, one crit and one not: the same SKILL, but not
+    // the same HIT -- they must not be averaged into a single number.
     { event: 'damage', char_index: 0, frame: 11, logs: { abil: 'Azure Devour', ele: 'anemo', crit: true, damage: 50 } },
     { event: 'damage', char_index: 0, frame: 11, logs: { abil: 'Azure Devour', ele: 'anemo', crit: false, damage: 60 } },
     { event: 'damage', char_index: 0, frame: 12, logs: { abil: 'swirl-pyro', ele: 'pyro', crit: false, damage: 30 } },
@@ -101,9 +104,13 @@ first.note?.startsWith('gcsim') ? ok(`row note: ${first.note}`) : fail('row 1 no
 
 eq(second.picked.stageIndex, 8, 'row 2 stage index');
 eq(second.summary.sourceLabel.stages[8].chs, '苍噬伤害', 'row 2 stage name');
-eq(second.summary.sourceLabel.stages[second.picked.stageIndex].hits, 2, 'row 2 hit count merged to 2');
-eq(second.critMode, 'avg', 'row 2 mixed crit -> avg');
+eq(second.summary.sourceLabel.stages[second.picked.stageIndex].hits, 2, 'row 2 keeps both of its hits');
+eq(second.critMode, 'avg', 'row 2 mixed crit -> avg at the row level');
 second.note?.includes('暴击混合') ? ok('row 2 note records the mixed crit') : fail('row 2 note');
+// ONE CRIT AND ONE NOT IS NOT ONE HIT. A single child could only report their
+// AVERAGE, which matches neither roll -- so the run keeps one child per outcome.
+eq(second.children?.length, 2, 'a mixed-crit part splits into one child per outcome');
+eq(second.children.map((c) => c.critMode).join(','), 'crit,never', 'each child keeps its own crit outcome');
 
 // A constellation hit has no row on the talent table; it comes from the curated
 // talent-damage.json, which is exactly why that file is passed to buildSources.
@@ -202,7 +209,7 @@ const buffSample = {
       'varka-c6-cdmg': ['status: added', 'expiry_frame: -1', 'cd: 0.80'],
     } },
     { event: 'damage', char_index: 0, frame: 21, logs: {
-      abil: 'Azure Devour', ele: 'anemo', crit: false, damage: 60,
+      abil: 'Azure Devour', ele: 'anemo', crit: true, damage: 60,
       'varka-c6-cdmg': ['status: added', 'expiry_frame: -1', 'cd: 0.80'],
     } },
     // The 4-piece's two halves are separate statuses, and both are its card.
@@ -348,6 +355,35 @@ near(
   1e-9
 );
 eq(computed.parts[1].perHit > computed.parts[0].perHit, true, 'the larger coefficient hits harder');
+
+/* --- 7. one cast, however its hits are interleaved -------------------------- */
+console.log('\n7. a cast is a cast, even when another ability lands between its hits');
+// THE BUG THIS GUARDS. 杜林's burst fires its three parts on ONE frame, but gcsim
+// does not always log them back to back -- other abilities land between them.
+// Merging only CONSECUTIVE same-ability hits therefore split the cast 2+1 and
+// the row read "2 段" where the log has three. The cast is the unit: every
+// damage event carries the `source_frame` its cast began on, so grouping by
+// (character, ability, source_frame) keeps all three together.
+const interleaved = {
+  ...sample,
+  logs: [
+    { event: 'damage', char_index: 0, frame: 40, logs: { abil: 'Azure Devour', ele: 'anemo', crit: true, damage: 100, source_frame: 40 } },
+    { event: 'calc', char_index: 0, frame: 40, logs: { abil: 'Azure Devour', talent: 1.5 } },
+    // Another ability's hit lands INSIDE the cast: the old adjacency rule cut
+    // the cast apart here.
+    { event: 'damage', char_index: 0, frame: 41, logs: { abil: 'Windbound Execution', ele: 'anemo', crit: true, damage: 10, source_frame: 41 } },
+    { event: 'damage', char_index: 0, frame: 42, logs: { abil: 'Azure Devour', ele: 'anemo', crit: true, damage: 200, source_frame: 40 } },
+    { event: 'calc', char_index: 0, frame: 42, logs: { abil: 'Azure Devour', talent: 3.0 } },
+    { event: 'damage', char_index: 0, frame: 44, logs: { abil: 'Azure Devour', ele: 'anemo', crit: true, damage: 300, source_frame: 40 } },
+    { event: 'calc', char_index: 0, frame: 44, logs: { abil: 'Azure Devour', talent: 4.5 } },
+  ],
+};
+const woven = importGcsim({ sample: interleaved, mapping, catalogues, charData, talentDamage, setBonuses });
+const burst = woven.doc.axes[0].entries
+  .find((e) => e.summary.sourceKey === 'elementalskill' && e.picked.stageIndex === 8);
+eq(Boolean(burst), true, 'the cast is one entry');
+eq(burst.children?.length, 3, 'all three parts of the cast stay in ONE entry');
+eq(burst.summary.parts.map((p) => p.mult).join(','), '1.5,3,4.5', "each part keeps gcsim's own coefficient");
 
 console.log(bad ? `\n${bad} PROBLEMS` : '\nall checks passed');
 process.exit(bad ? 1 : 0);

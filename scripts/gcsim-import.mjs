@@ -279,16 +279,14 @@ export function importGcsim({
   let seq = 0;
   const nextId = () => `e${++seq}`;
 
-  // Merge CONSECUTIVE hits of the same ability into one row whose hit count is
-  // the run length. gcsim logs one event per part (苍噬 fires twice back to back),
-  // and one row per part would bury the rotation in noise.
-  let run = null;
-  const flush = () => {
-    if (!run) return;
+  // Merge the hits of ONE CAST into one row whose hit count is the cast's run
+  // length. gcsim logs one event per part (苍噬 fires twice back to back), and
+  // one row per part would bury the rotation in noise.
+  const flush = (cast) => {
+    if (!cast) return;
     const {
       ci, ability, hits, total, critAll, critNone, ele, events,
-    } = run;
-    run = null;
+    } = cast;
 
     const cd = details[ci];
     const mapped = abilities[idFor[ci].id]?.[ability];
@@ -358,9 +356,24 @@ export function importGcsim({
     // and its segments did not match. So a run with more than one distinct
     // (multiplier, element) pair becomes a PARENT with one child per pair, each
     // child carrying that hit's own multiplier, buffs and crit mode.
+    // A PART IS A SET OF IDENTICAL HITS. Grouping by (talent, element) alone is
+    // not enough: a stack can move BETWEEN two hits of the same part (gcsim's
+    // A4/C6 CD on varka steps 60->80 mid-cast), and folding those two into one
+    // child makes the first value win -- the row then misses gcsim's own total
+    // by the step. The CRIT OUTCOME matters for the same reason: a child holding
+    // one crit and one non-crit hit can only report their AVERAGE, not what the
+    // log rolled. So the key also carries the hit's crit outcome AND its whole
+    // buff signature: two hits merge only when they are the same in every way
+    // that moves the number. A part that drifted therefore becomes two children
+    // with the same coefficient and different cards, which is exactly what the
+    // log says happened.
+    const buffSig = (h) => [...h.buffs.entries()]
+      .map(([id, p]) => `${id}=${p.value}`)
+      .sort()
+      .join('&');
     const groups = [];
     for (const h of events) {
-      const key = `${h.talent}|${h.ele}`;
+      const key = `${h.talent}|${h.ele}|${h.crit}|${buffSig(h)}`;
       let g = groups.find((x) => x.key === key);
       if (!g) {
         g = { key, talent: h.talent, ele: h.ele, count: 0, crits: [], buffs: new Map() };
@@ -451,20 +464,46 @@ export function importGcsim({
     });
   };
 
+  // GROUP THE LOG INTO CASTS.
+  //
+  // One cast of a multi-part skill fires several damage events, and gcsim stamps
+  // each of them with the SAME `source_frame` -- the frame the cast began. So
+  // merging only ADJACENT same-ability hits UNDER-COUNTS a cast whose parts are
+  // interleaved with other abilities: 杜林's burst lands its three parts on one
+  // frame, but the run splits them 2+1 and the row read "2 段" where the log (and
+  // the local table) have three. Group by (character, ability, source_frame):
+  // a cast is a cast however its hits are interleaved. The hits INSIDE a cast are
+  // still split by part at flush time. Events with no `source_frame` fall back
+  // to the old adjacency rule, so a shape the log never emits keeps its behaviour.
+  const newCast = (ci, ability, ele) => ({
+    ci, ability, hits: 0, total: 0, critAll: true, critNone: true, ele, events: [],
+  });
+  const castMap = new Map();
+  const casts = [];
+  let adjacent = null;
   for (const event of damage) {
     const L = event.logs || {};
     const ci = event.char_index;
-    if (!run || run.ci !== ci || run.ability !== L.abil) {
-      flush();
-      run = {
-        ci, ability: L.abil, hits: 0, total: 0, critAll: true, critNone: true,
-        ele: L.ele, events: [],
-      };
+    let cast;
+    if (L.source_frame != null) {
+      const key = `${ci}|${L.abil}|${L.source_frame}`;
+      cast = castMap.get(key);
+      if (!cast) {
+        cast = newCast(ci, L.abil, L.ele);
+        castMap.set(key, cast);
+        casts.push(cast);
+      }
+    } else if (!adjacent || adjacent.ci !== ci || adjacent.ability !== L.abil) {
+      adjacent = newCast(ci, L.abil, L.ele);
+      casts.push(adjacent);
+      cast = adjacent;
+    } else {
+      cast = adjacent;
     }
-    run.hits += 1;
-    run.total += Number(L.damage) || 0;
-    run.critAll = run.critAll && Boolean(L.crit);
-    run.critNone = run.critNone && !L.crit;
+    cast.hits += 1;
+    cast.total += Number(L.damage) || 0;
+    cast.critAll = cast.critAll && Boolean(L.crit);
+    cast.critNone = cast.critNone && !L.crit;
 
     // THIS HIT'S OWN SLICE. The row is no longer one merged buff map: a run can
     // hold several PARTS, so each hit keeps its own statuses and the split at
@@ -476,7 +515,7 @@ export function importGcsim({
       ele: L.ele || null,
       buffs: new Map(),
     };
-    run.events.push(hit);
+    cast.events.push(hit);
 
     // THE CARDS ARE THE HIT'S OWN. Each status the log lists for this hit was
     // live for it, so a row collects exactly what its hits had.
@@ -576,7 +615,7 @@ export function importGcsim({
       absorb(name, raw);
     }
   }
-  flush();
+  for (const cast of casts) flush(cast);
 
   const rows = [...byAbility.values()];
   const mappedHits = rows.filter((r) => r.mapped).reduce((n, r) => n + r.hits, 0);
