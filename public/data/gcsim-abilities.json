@@ -1,60 +1,4569 @@
 {
   "_comment": [
-    "gcsim -> GS-Plan 对照表，由 scripts/gcsim-import.mjs 读取。",
+    "gcsim -> GS-Plan 对照表。由 scripts/gcsim-map.mjs 从 gcsim 的 Go 源码生成，",
+    "不要手改：改了就重跑  node scripts/gcsim-map.mjs --write 。",
     "",
-    "gcsim 的 ability 名是它自己的内部名，本地数据里没有，只能人工对照，",
-    "所以每个角色的每个 ability 都在这里明确写死，改错了肉眼就能看出来。",
+    "   node scripts/gcsim-map.mjs            # 只打印覆盖率",
+    "   node scripts/gcsim-map.mjs --report   # 再列出所有没配上的 ability",
     "",
-    "stage 用「中文行名」而不是行下标：行名是人能核对的东西，",
-    "下标会随着角色天赋表增删一行而整体漂移，而且漂移后不报错、只是悄悄指错行。",
+    "abilities 的键是 gcsim 日志里的 ability 名，值是 { source, stage }。",
+    "stage 用「中文行名」：行名是人能核对的，下标会随天赋表增删而整体漂移、",
+    "且漂移后不报错。",
     "",
-    "命座/天赋的独立伤害（const2 / const4 / p1 这些来源）也在这里对，它们的行名来自",
-    "public/data/talent-damage.json 的 basis（攻击力 -> 「攻击力倍率伤害」）。",
+    "只写「推断不出来」的特例：characters 是 pkg/shortcut 里那些和英文名对不上的",
+    "别名（英文名本身走代码推断），weapons/sets 目前都能推断所以是空的。",
     "",
-    "characters / weapons / sets 只写「自动推断不出来的特例」，例如 gcsim 的别名；",
-    "能推断的（gcsim 名 = 英文名去掉非字母数字再小写）留给代码推断，不在这里铺一遍。"
+    "生成器不猜：配不上的 ability 宁可不写（导入时会出现在报告里），也不写一个",
+    "像是对的错行。旅行者按元素分文件，暂不生成。"
   ],
-
   "characters": {
-    "varka": "10000128",
-    "prune": "10000132",
-    "nicole": "10000131",
-    "durin": "10000123"
+    "aratakitheoneandoniitto": "10000057",
+    "amy": "10000031",
+    "fish": "10000031",
+    "ht": "10000046",
+    "kaz": "10000047",
+    "kujosara": "10000056",
+    "kusanali": "10000073",
+    "lesserlordkusanali": "10000073",
+    "demoiselle": "10000091",
+    "chiefjusticeoffontaine": "10000087",
+    "olorun": "10000105",
+    "herexcellencythealmightynarukamiogoshogodofthunder": "10000052",
+    "koko": "10000054",
+    "childe": "10000033",
+    "kabukimono": "10000075",
+    "kuni": "10000075",
+    "kunikuzushi": "10000075",
+    "scara": "10000075",
+    "scaramouche": "10000075",
+    "xl": "10000023",
+    "cloudretainer": "10000093",
+    "liuyun": "10000093",
+    "xq": "10000025",
+    "zl": "10000030"
   },
-
   "weapons": {},
-
   "sets": {
     "risingwinds": "15044"
   },
-
   "abilities": {
-    "10000128": {
-      "Windbound Execution": { "source": "elementalskill", "stage": "技能伤害" },
-      "Sturm und Drang Normal 0": { "source": "elementalskill", "stage": "狂飙突进·一段伤害" },
-      "Sturm und Drang Normal 1": { "source": "elementalskill", "stage": "狂飙突进·二段伤害" },
-      "Four Winds' Ascension": { "source": "elementalskill", "stage": "四风将起伤害" },
-      "Azure Devour": { "source": "elementalskill", "stage": "苍噬伤害" },
-      "Varka C2": { "source": "const2", "stage": "攻击力倍率伤害" }
+    "10000002": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Soumetsu": {
+        "source": "elementalburst",
+        "stage": "切割伤害"
+      },
+      "Charge": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Hyouka": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      }
     },
-    "10000132": {
-      "Ring-A-Ding-Ding! Hexhunter Chime DMG": { "source": "elementalskill", "stage": "叮铃铃·猎魔之音伤害" },
-      "Clang Clang! Witch-tribution Comes! DMG": { "source": "elementalskill", "stage": "咚锵锵·裁魔之惩伤害" },
-      "The Bell Tolls! The Hunt Is On!": { "source": "elementalburst", "stage": "技能伤害" },
-      "Witchlure Bell": { "source": "elementalburst", "stage": "诱巫饵铃伤害" },
-      "Banehunter Oathhammer (A1)": { "source": "p1", "stage": "攻击力倍率伤害" },
-      "Banehunter Oathhammer Ricochet (C4)": { "source": "const4", "stage": "攻击力倍率伤害" }
+    "10000003": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Dandelion Breeze": {
+        "source": "elementalburst",
+        "stage": "爆发伤害"
+      },
+      "Charge": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Gale Blade": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      }
     },
-    "10000131": {
-      "Revelation: Uncreated Light": { "source": "elementalskill", "stage": "技能伤害" }
+    "10000006": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Lightning Rose (Initial)": {
+        "source": "elementalburst",
+        "stage": "放电伤害"
+      },
+      "Charge Attack": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Violet Arc (Press)": {
+        "source": "elementalskill",
+        "stage": "点按伤害"
+      },
+      "Violet Arc (Hold)": {
+        "source": "elementalskill",
+        "stage": "无引雷长按伤害"
+      }
+    },
+    "10000014": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Charge Attack": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Let the Show Begin♪ (Droplet)": {
+        "source": "elementalskill",
+        "stage": "水珠伤害"
+      }
+    },
+    "10000015": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Glacial Waltz": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Frostgnaw": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      }
+    },
+    "10000016": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      }
+    },
+    "10000020": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Lightning Fang": {
+        "source": "elementalburst",
+        "stage": "爆发伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Claw and Thunder (Press)": {
+        "source": "elementalskill",
+        "stage": "点按技能伤害"
+      },
+      "Claw and Thunder (Hold)": {
+        "source": "elementalskill",
+        "stage": "长按技能伤害"
+      }
+    },
+    "10000021": {
+      "Fully-Charged Aimed Shot": {
+        "source": "normalattack",
+        "stage": "满蓄力瞄准射击"
+      },
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Fiery Rain": {
+        "source": "elementalburst",
+        "stage": "箭雨单次伤害"
+      }
+    },
+    "10000022": {
+      "Fully-Charged Aimed Shot": {
+        "source": "normalattack",
+        "stage": "满蓄力瞄准射击"
+      },
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Normal 5": {
+        "source": "normalattack",
+        "stage": "六段伤害"
+      },
+      "Wind's Grand Ode": {
+        "source": "elementalburst",
+        "stage": "持续伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Skyward Sonnett (Press)": {
+        "source": "elementalskill",
+        "stage": "点按伤害"
+      }
+    },
+    "10000023": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Pyronado": {
+        "source": "elementalburst",
+        "stage": "旋火轮伤害"
+      },
+      "Charge": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Oil Meets Fire (C2)": {
+        "source": "const2",
+        "stage": "攻击力倍率伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      }
+    },
+    "10000024": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Stormbreaker (Initial)": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Tidecaller": {
+        "source": "elementalskill",
+        "stage": "护盾吸收量"
+      }
+    },
+    "10000025": {
+      "Guhua Sword: Raincutter": {
+        "source": "elementalburst",
+        "stage": "剑雨伤害"
+      },
+      "Charge": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Guhua Sword: Fatal Rainscreen": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      }
+    },
+    "10000026": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Normal 5": {
+        "source": "normalattack",
+        "stage": "六段伤害"
+      },
+      "Bane of All Evil": {
+        "source": "elementalburst",
+        "stage": "普通攻击/重击/下落攻击伤害提升"
+      },
+      "Charge": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Lemniscatic Wind Cycling": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      }
+    },
+    "10000027": {
+      "Starshatter": {
+        "source": "elementalburst",
+        "stage": "宝石伤害"
+      },
+      "Charge Gem () 0": {
+        "source": "elementalburst",
+        "stage": "宝石伤害"
+      },
+      "Jade Screen": {
+        "source": "elementalskill",
+        "stage": "继承生命"
+      }
+    },
+    "10000029": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Sparks'n'Splash": {
+        "source": "elementalburst",
+        "stage": "轰轰火花伤害"
+      },
+      "Sparkly Explosion (C4)": {
+        "source": "const4",
+        "stage": "攻击力倍率伤害"
+      },
+      "Charge": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Jumpy Dumpty (Bounce)": {
+        "source": "elementalskill",
+        "stage": "蹦蹦炸弹伤害"
+      },
+      "Jumpy Dumpty (Mine)": {
+        "source": "elementalskill",
+        "stage": "诡雷伤害"
+      }
+    },
+    "10000030": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Normal 5": {
+        "source": "normalattack",
+        "stage": "六段伤害"
+      },
+      "Planet Befall": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Charge": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Stone Stele (Hold)": {
+        "source": "elementalskill",
+        "stage": "长按伤害"
+      },
+      "Stone Stele (Initial)": {
+        "source": "elementalskill",
+        "stage": "岩脊伤害/共鸣伤害"
+      },
+      "Stone Stele (Tick)": {
+        "source": "elementalskill",
+        "stage": "岩脊伤害/共鸣伤害"
+      }
+    },
+    "10000031": {
+      "Fully-Charged Aimed Shot": {
+        "source": "normalattack",
+        "stage": "满蓄力瞄准射击"
+      },
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Gaze of the Deep (C1)": {
+        "source": "const1",
+        "stage": "攻击力倍率伤害"
+      },
+      "Midnight Phantasmagoria": {
+        "source": "elementalburst",
+        "stage": "落雷伤害"
+      },
+      "Her Pilgrimage of Bleak (C4)": {
+        "source": "const4",
+        "stage": "攻击力倍率伤害"
+      },
+      "Evernight Raven (C6)": {
+        "source": "const6",
+        "stage": "攻击力倍率伤害"
+      },
+      "Oz (Summon)": {
+        "source": "elementalskill",
+        "stage": "召唤伤害"
+      }
+    },
+    "10000032": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Fantastic Voyage": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Passion Overload (Press)": {
+        "source": "elementalskill",
+        "stage": "点按伤害"
+      }
+    },
+    "10000033": {
+      "Fully-Charged Aimed Shot": {
+        "source": "normalattack",
+        "stage": "满蓄力瞄准射击"
+      },
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Normal 5": {
+        "source": "normalattack",
+        "stage": "六段伤害"
+      },
+      "Charged Attack": {
+        "source": "elementalskill",
+        "stage": "重击伤害"
+      },
+      "Riptide Flash": {
+        "source": "normalattack",
+        "stage": "断流·闪 伤害"
+      },
+      "Riptide Slash": {
+        "source": "elementalskill",
+        "stage": "断流·斩 伤害"
+      },
+      "Riptide Blast": {
+        "source": "elementalburst",
+        "stage": "断流·爆 伤害"
+      },
+      "Riptide Burst": {
+        "source": "normalattack",
+        "stage": "断流·破 伤害"
+      },
+      "Foul Legacy: Raging Tide": {
+        "source": "elementalskill",
+        "stage": "状态激发伤害"
+      }
+    },
+    "10000034": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Sweeping Time (Burst)": {
+        "source": "elementalburst",
+        "stage": "爆发伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Breastplate": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      },
+      "Breastplate (C4)": {
+        "source": "const4",
+        "stage": "攻击力倍率伤害"
+      }
+    },
+    "10000035": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Herald of Frost: Coordinated Attack": {
+        "source": "elementalskill",
+        "stage": "寒病鬼差协同攻击伤害"
+      }
+    },
+    "10000036": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Chongyun C1": {
+        "source": "const1",
+        "stage": "攻击力倍率伤害"
+      },
+      "Spirit Blade: Cloud-Parting Star": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Spirit Blade: Chonghua's Layered Frost": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      }
+    },
+    "10000037": {
+      "Fully-Charged Aimed Shot": {
+        "source": "normalattack",
+        "stage": "瞄准射击"
+      },
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Normal 5": {
+        "source": "normalattack",
+        "stage": "六段伤害"
+      },
+      "Celestial Shower": {
+        "source": "elementalburst",
+        "stage": "冰棱伤害"
+      }
+    },
+    "10000038": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Rite of Progeniture: Tectonic Tide": {
+        "source": "elementalburst",
+        "stage": "爆发伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Abiogenesis: Solar Isotoma (Initial)": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      }
+    },
+    "10000039": {
+      "Fully-Charged Aimed Shot": {
+        "source": "normalattack",
+        "stage": "满蓄力瞄准射击"
+      },
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Signature Mix (Initial)": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Icy Paw": {
+        "source": "elementalskill",
+        "stage": "猫爪伤害"
+      }
+    },
+    "10000041": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Illusory Bubble (Initial)": {
+        "source": "elementalburst",
+        "stage": "泡影破裂伤害"
+      },
+      "Illusory Bubble (Break)": {
+        "source": "elementalburst",
+        "stage": "泡影破裂伤害"
+      },
+      "Illusory Bubble (Explosion)": {
+        "source": "elementalburst",
+        "stage": "泡影破裂伤害"
+      },
+      "Charge Attack": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      }
+    },
+    "10000042": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Starward Sword (Initial)": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Thunderclap Slash": {
+        "source": "elementalskill",
+        "stage": "雷暴连斩伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Stellar Restoration": {
+        "source": "elementalskill",
+        "stage": "雷楔伤害"
+      },
+      "Stellar Restoration (C1)": {
+        "source": "const1",
+        "stage": "攻击力倍率伤害"
+      },
+      "Stellar Restoration (Slashing)": {
+        "source": "elementalskill",
+        "stage": "斩击伤害"
+      }
+    },
+    "10000043": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Forbidden Creation-Isomer 75/Type II": {
+        "source": "elementalburst",
+        "stage": "持续伤害"
+      },
+      "Charge Attack": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Astable Anemohypostasis Creation-6308": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      }
+    },
+    "10000044": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Riff Revolution (Initial)": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Sweeping Fervor (Initial)": {
+        "source": "elementalskill",
+        "stage": "挥舞伤害"
+      }
+    },
+    "10000045": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Charge": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      }
+    },
+    "10000046": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Normal 5": {
+        "source": "normalattack",
+        "stage": "六段伤害"
+      },
+      "Spirit Soother (Low HP)": {
+        "source": "elementalburst",
+        "stage": "低血量时技能伤害"
+      },
+      "Charge Attack": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge (Paramita Papilio)": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Blood Blossom": {
+        "source": "elementalskill",
+        "stage": "血梅香伤害"
+      }
+    },
+    "10000047": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Kazuha Slash": {
+        "source": "elementalburst",
+        "stage": "斩击伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Chihayaburu (Press)": {
+        "source": "elementalskill",
+        "stage": "点按技能伤害"
+      },
+      "Chihayaburu (Hold)": {
+        "source": "elementalskill",
+        "stage": "长按技能伤害"
+      }
+    },
+    "10000048": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Done Deal": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Charge Attack": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Signed Edict": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      }
+    },
+    "10000049": {
+      "Fully-Charged Aimed Shot": {
+        "source": "normalattack",
+        "stage": "满蓄力瞄准射击"
+      },
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Aurous Blaze (Initial)": {
+        "source": "elementalburst",
+        "stage": "琉金火光爆炸伤害"
+      },
+      "Aurous Blaze (Explode)": {
+        "source": "elementalburst",
+        "stage": "琉金火光爆炸伤害"
+      }
+    },
+    "10000050": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Crimson Ooyoroi": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Fiery Collapse": {
+        "source": "elementalburst",
+        "stage": "炽火崩破伤害"
+      },
+      "Charge": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Blazing Blessing": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      }
+    },
+    "10000051": {
+      "Icetide (Lightfall)": {
+        "source": "elementalburst",
+        "stage": "光降之剑基础伤害"
+      },
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Glacial Illumination (Initial)": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Glacial Illumination (Lightfall)": {
+        "source": "elementalburst",
+        "stage": "光降之剑基础伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Icetide Vortex": {
+        "source": "elementalskill",
+        "stage": "点按伤害"
+      },
+      "Icetide Vortex (Hold)": {
+        "source": "elementalskill",
+        "stage": "长按伤害"
+      },
+      "Icetide Vortex (Icewhirl)": {
+        "source": "elementalskill",
+        "stage": "冰涡之剑伤害"
+      }
+    },
+    "10000052": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Musou Shinsetsu": {
+        "source": "elementalburst",
+        "stage": "梦想一刀基础伤害"
+      },
+      "Charge Attack": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge (Musou Isshin)": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      }
+    },
+    "10000053": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Yoohoo Art: Mujina Flurry": {
+        "source": "elementalburst",
+        "stage": "技能发动伤害"
+      },
+      "Muji-Muji Daruma": {
+        "source": "elementalburst",
+        "stage": "不倒貉貉伤害"
+      },
+      "Fuufuu Windwheel (DoT Press)": {
+        "source": "elementalskill",
+        "stage": "风风轮伤害"
+      },
+      "Fuufuu Whirlwind (Kick Press)": {
+        "source": "elementalskill",
+        "stage": "风风轮舞踢点按伤害"
+      },
+      "Fuufuu Whirlwind (Kick Hold)": {
+        "source": "elementalskill",
+        "stage": "风风轮舞踢长按伤害"
+      },
+      "Fuufuu Windwheel (DoT Hold)": {
+        "source": "elementalskill",
+        "stage": "风风轮伤害"
+      },
+      "Fuufuu Windwheel Elemental (Elemental DoT Hold)": {
+        "source": "elementalskill",
+        "stage": "风风轮附带元素伤害"
+      }
+    },
+    "10000054": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Nereid's Ascension": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Charge": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "At Water's Edge (C1)": {
+        "source": "const1",
+        "stage": "生命值上限倍率伤害"
+      },
+      "Bake-Kurage": {
+        "source": "elementalburst",
+        "stage": "化海月伤害提升"
+      }
+    },
+    "10000055": {
+      "Fully-Charged Aimed Shot": {
+        "source": "normalattack",
+        "stage": "满蓄力瞄准射击"
+      },
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Juuga: Forward Unto Victory": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Crystal Collapse": {
+        "source": "elementalburst",
+        "stage": "岩晶崩破伤害"
+      },
+      "Inuzaka All-Round Defense": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      }
+    },
+    "10000056": {
+      "Fully-Charged Aimed Shot": {
+        "source": "normalattack",
+        "stage": "满蓄力瞄准射击"
+      },
+      "Tengu Juurai: Ambush": {
+        "source": "elementalskill",
+        "stage": "天狗咒雷·伏 伤害"
+      },
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Tengu Juurai: Titanbreaker": {
+        "source": "elementalburst",
+        "stage": "天狗咒雷·金刚坏 伤害"
+      }
+    },
+    "10000057": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Masatsu Zetsugi: Akaushi Burst!": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      }
+    },
+    "10000058": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Great Secret Art: Tenko Kenshin": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Charge Attack": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Sesshou Sakura": {
+        "source": "elementalskill",
+        "stage": "杀生樱伤害·壹阶"
+      }
+    },
+    "10000059": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Windmuster Iris (Aura check)": {
+        "source": "elementalburst",
+        "stage": "聚风真眼伤害"
+      },
+      "Fudou Style Vacuum Slugger": {
+        "source": "elementalburst",
+        "stage": "不动流·真空弹伤害"
+      },
+      "Windmuster Iris": {
+        "source": "elementalburst",
+        "stage": "聚风真眼伤害"
+      },
+      "Charge Attack": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Heartstopper Strike": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      }
+    },
+    "10000060": {
+      "Breakthrough Barb": {
+        "source": "normalattack",
+        "stage": "破局矢伤害"
+      },
+      "Fully-Charged Aimed Shot": {
+        "source": "normalattack",
+        "stage": "满蓄力瞄准射击"
+      },
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Depth-Clarion Dice": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Exquisite Throw": {
+        "source": "elementalburst",
+        "stage": "玄掷玲珑伤害"
+      },
+      "Lingering Lifeline": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      }
+    },
+    "10000061": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Secret Art: Surprise Dispatch": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Cat Grass Cardamom Explosion": {
+        "source": "elementalburst",
+        "stage": "猫草豆蔻爆炸伤害"
+      },
+      "Tail-Flicking Flying Kick": {
+        "source": "elementalskill",
+        "stage": "甩尾飞踢伤害"
+      },
+      "Flipclaw Strike": {
+        "source": "elementalskill",
+        "stage": "翻正爪击伤害"
+      },
+      "Urgent Neko Parcel": {
+        "source": "elementalskill",
+        "stage": "猫箱急件冲撞伤害"
+      }
+    },
+    "10000062": {
+      "Fully-Charged Aimed Shot": {
+        "source": "normalattack",
+        "stage": "满蓄力瞄准射击"
+      },
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Prophecies of Dawn": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Freeze Bomb": {
+        "source": "elementalskill",
+        "stage": "冰尘弹伤害"
+      }
+    },
+    "10000063": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Divine Maiden's Deliverance (Initial)": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Charge": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Spring Spirit Summoning (Press)": {
+        "source": "elementalskill",
+        "stage": "点按技能伤害"
+      },
+      "Spring Spirit Summoning (Hold)": {
+        "source": "elementalskill",
+        "stage": "长按技能伤害"
+      }
+    },
+    "10000064": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Cliffbreaker's Banner": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Charge": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Opening Flourish (Press)": {
+        "source": "elementalskill",
+        "stage": "点按伤害"
+      }
+    },
+    "10000065": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Gyoei Narukami Kariyama Rite": {
+        "source": "elementalburst",
+        "stage": "单次伤害"
+      },
+      "Sanctifying Ring": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      },
+      "Grass Ring of Sanctification": {
+        "source": "elementalskill",
+        "stage": "越祓草轮伤害"
+      }
+    },
+    "10000066": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Shunsuiken 0": {
+        "source": "elementalskill",
+        "stage": "一段瞬水剑伤害"
+      },
+      "Shunsuiken 1": {
+        "source": "elementalskill",
+        "stage": "二段瞬水剑伤害"
+      },
+      "Shunsuiken 2": {
+        "source": "elementalskill",
+        "stage": "三段瞬水剑伤害"
+      },
+      "Kamisato Art: Suiyuu": {
+        "source": "elementalburst",
+        "stage": "水花剑伤害"
+      },
+      "Charge": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Boundless Origin (C6)": {
+        "source": "const6",
+        "stage": "攻击力倍率伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Kamisato Art: Kyouka": {
+        "source": "elementalskill",
+        "stage": "一段瞬水剑伤害"
+      }
+    },
+    "10000067": {
+      "Fully-Charged Aimed Shot": {
+        "source": "normalattack",
+        "stage": "满蓄力瞄准射击"
+      },
+      "Floral Sidewinder (A1)": {
+        "source": "p1",
+        "stage": "攻击力倍率伤害"
+      },
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Trump-Card Kitty (Explosion)": {
+        "source": "elementalburst",
+        "stage": "爆发伤害"
+      },
+      "Trump-Card Kitty (Leap)": {
+        "source": "elementalburst",
+        "stage": "跃动伤害"
+      },
+      "Forest of Falling Arrows (C6)": {
+        "source": "const6",
+        "stage": "攻击力倍率伤害"
+      },
+      "Floral Brush": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      }
+    },
+    "10000068": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Alcazarzaray's Exactitude: Connector DMG": {
+        "source": "elementalburst",
+        "stage": "连接伤害"
+      },
+      "Special Franchise (C2)": {
+        "source": "const2",
+        "stage": "攻击力倍率伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Troubleshooter Shot": {
+        "source": "elementalskill",
+        "stage": "断除烦恼炮伤害"
+      },
+      "After-Sales Service Round": {
+        "source": "elementalskill",
+        "stage": "售后服务弹伤害"
+      }
+    },
+    "10000069": {
+      "Fully-Charged Aimed Shot": {
+        "source": "normalattack",
+        "stage": "瞄准射击"
+      },
+      "Fully-Charged Aimed Shot (Wreath Arrow)": {
+        "source": "normalattack",
+        "stage": "花筥箭伤害"
+      },
+      "Clusterbloom Arrow": {
+        "source": "normalattack",
+        "stage": "藏蕴花矢伤害"
+      },
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Tanglevine Shaft": {
+        "source": "elementalburst",
+        "stage": "缠藤箭伤害"
+      },
+      "Vijnana-Phala Mine": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      }
+    },
+    "10000070": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Dance of Abzendegi: Distant Dreams, Listening Spring": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Lingering Aeon": {
+        "source": "elementalburst",
+        "stage": "永世流沔伤害"
+      },
+      "Dance of Haftkarsvar": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      },
+      "Sword Dance 0": {
+        "source": "elementalskill",
+        "stage": "剑舞步/旋舞步一段伤害"
+      },
+      "Sword Dance 1": {
+        "source": "elementalskill",
+        "stage": "剑舞步/旋舞步二段伤害"
+      },
+      "Whirling Steps 0": {
+        "source": "elementalskill",
+        "stage": "剑舞步/旋舞步一段伤害"
+      },
+      "Whirling Steps 1": {
+        "source": "elementalskill",
+        "stage": "剑舞步/旋舞步二段伤害"
+      }
+    },
+    "10000071": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Charge Attack": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge (Pactsworn Pathclearer)": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Secret Rite: Chasmic Soulfarer": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      },
+      "Mortuary Rite": {
+        "source": "elementalskill",
+        "stage": "冥祭伤害"
+      }
+    },
+    "10000072": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Sacred Rite: Wagtail's Tide (Initial)": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Charge": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "The Overflow (C6)": {
+        "source": "const6",
+        "stage": "生命值上限倍率伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Sacred Rite: Heron's Sanctum": {
+        "source": "elementalskill",
+        "stage": "护盾吸收量"
+      }
+    },
+    "10000073": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Charge Attack": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "All Schemes to Know (Press)": {
+        "source": "elementalskill",
+        "stage": "点按伤害"
+      },
+      "All Schemes to Know (Hold)": {
+        "source": "elementalskill",
+        "stage": "长按伤害"
+      },
+      "Tri-Karma Purification": {
+        "source": "elementalskill",
+        "stage": "灭净三业伤害"
+      }
+    },
+    "10000074": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Starlight Slug": {
+        "source": "elementalburst",
+        "stage": "星光弹伤害"
+      },
+      "Shooting Star": {
+        "source": "elementalskill",
+        "stage": "飞星伤害"
+      },
+      "Nights of Formal Focus": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      }
+    },
+    "10000075": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Kyougen: Five Ceremonial Plays": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Charge Attack": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Low Plunge Attack": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Hanega: Song of the Wind": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      }
+    },
+    "10000076": {
+      "Fully-Charged Aimed Shot": {
+        "source": "normalattack",
+        "stage": "满蓄力瞄准射击"
+      },
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "The Wind's Secret Ways": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Wind Realm of Nasamjnin": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      },
+      "Pressurized Collapse": {
+        "source": "elementalskill",
+        "stage": "风压坍陷风涡伤害"
+      }
+    },
+    "10000077": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Moonjade Descent": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Charge": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      }
+    },
+    "10000078": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Particular Field: Fetters of Phenomena": {
+        "source": "elementalburst",
+        "stage": "单次伤害"
+      },
+      "Low Plunge Attack": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Universality: An Elaboration on Form": {
+        "source": "elementalskill",
+        "stage": "突进攻击伤害"
+      }
+    },
+    "10000079": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Flame-Mane's Fist": {
+        "source": "elementalburst",
+        "stage": "炽鬃拳伤害"
+      },
+      "Incineration Drive": {
+        "source": "elementalburst",
+        "stage": "焚落踢伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Molten Inferno": {
+        "source": "elementalskill",
+        "stage": "净焰昂藏伤害"
+      },
+      "Ranging Flame": {
+        "source": "elementalskill",
+        "stage": "剑域炽焰伤害"
+      },
+      "Redmane's Blood": {
+        "source": "elementalskill",
+        "stage": "赤鬃之血上限"
+      }
+    },
+    "10000080": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Charge Attack": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Flowfrost Arrow": {
+        "source": "elementalskill",
+        "stage": "霜流矢伤害"
+      },
+      "Rimestar Flare": {
+        "source": "elementalskill",
+        "stage": "冰星信标伤害"
+      },
+      "Rimestar Shard": {
+        "source": "elementalskill",
+        "stage": "冰星破片伤害"
+      }
+    },
+    "10000081": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Painted Dome": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Pairidaeza's Dreams (C6)": {
+        "source": "const6",
+        "stage": "攻击力倍率伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Artistic Ingenuity": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      }
+    },
+    "10000082": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Charge Attack": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Gossamer Sprite: Splice. (C2)": {
+        "source": "const2",
+        "stage": "攻击力倍率伤害"
+      },
+      "Universal Diagnosis": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      }
+    },
+    "10000083": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Magic Trick: Astonishing Shift": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Bogglecat Box": {
+        "source": "elementalburst",
+        "stage": "惊奇猫猫盒伤害"
+      },
+      "Vivid Shot": {
+        "source": "elementalburst",
+        "stage": "彩练术弹伤害"
+      },
+      "Surging Blade (": {
+        "source": "elementalskill",
+        "stage": "流涌之刃伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Enigmatic Feint": {
+        "source": "elementalskill",
+        "stage": "谜影突刺伤害"
+      }
+    },
+    "10000084": {
+      "Fully-Charged Aimed Shot": {
+        "source": "normalattack",
+        "stage": "瞄准射击"
+      },
+      "Fully-Charged Aimed Shot (Prop Arrow)": {
+        "source": "normalattack",
+        "stage": "隐具魔术箭伤害"
+      },
+      "Spiritbreath Thorn (": {
+        "source": "normalattack",
+        "stage": "灵息之刺伤害"
+      },
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Wondrous Trick: Miracle Parade": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Wondrous Trick: Miracle Parade (Explosive Firework)": {
+        "source": "elementalburst",
+        "stage": "引爆礼花伤害"
+      },
+      "Pyrotechnic Strike": {
+        "source": "normalattack",
+        "stage": "礼花术弹伤害"
+      },
+      "Bewildering Lights": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      }
+    },
+    "10000085": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Shadowhunter's Ambush": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      }
+    },
+    "10000086": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Darkgold Wolfbite": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Surging Blade": {
+        "source": "elementalburst",
+        "stage": "流涌之刃伤害"
+      },
+      "Charge Attack": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      }
+    },
+    "10000087": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "O Tides, I Have Returned: Skill DMG": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "O Tides, I Have Returned: Waterfall DMG": {
+        "source": "elementalburst",
+        "stage": "水瀑伤害"
+      },
+      "Charged Attack: Equitable Judgment": {
+        "source": "normalattack",
+        "stage": "重击·衡平推裁持续伤害"
+      },
+      "Charge Attack": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "O Tears, I Shall Repay": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      },
+      "Spiritbreath Thorn (": {
+        "source": "elementalskill",
+        "stage": "灵息之刺伤害"
+      }
+    },
+    "10000088": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Still Photo: Comprehensive Confirmation": {
+        "source": "elementalburst",
+        "stage": "施放治疗量"
+      },
+      "Charge Attack": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Spiritbreath Thorn": {
+        "source": "normalattack",
+        "stage": "灵息之刺伤害"
+      },
+      "A Summation of Interest (C6)": {
+        "source": "const6",
+        "stage": "攻击力倍率伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Framing: Freezing Point Composition": {
+        "source": "elementalskill",
+        "stage": "点按拍照伤害"
+      },
+      "Framing: Freezing Point Composition (Hold)": {
+        "source": "elementalskill",
+        "stage": "长按拍照伤害"
+      },
+      "Snappy Silhouette Mark": {
+        "source": "elementalskill",
+        "stage": "「瞬时剪影」印记伤害"
+      },
+      "Focused Impression Mark": {
+        "source": "elementalskill",
+        "stage": "「聚焦印象」印记伤害"
+      }
+    },
+    "10000089": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Let the People Rejoice": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      ": Surintendante Chevalmarin 0": {
+        "source": "elementalskill",
+        "stage": "海薇玛夫人伤害"
+      },
+      ": Surintendante Chevalmarin 1": {
+        "source": "elementalskill",
+        "stage": "海薇玛夫人消耗生命值"
+      },
+      ": Gentilhomme Usher 0": {
+        "source": "elementalskill",
+        "stage": "乌瑟勋爵伤害"
+      },
+      ": Gentilhomme Usher 1": {
+        "source": "elementalskill",
+        "stage": "乌瑟勋爵消耗生命值"
+      },
+      ": Mademoiselle Crabaletta 0": {
+        "source": "elementalskill",
+        "stage": "谢贝蕾妲小姐伤害"
+      },
+      ": Mademoiselle Crabaletta 1": {
+        "source": "elementalskill",
+        "stage": "谢贝蕾妲小姐消耗生命值"
+      },
+      "Salon Solitaire": {
+        "source": "elementalskill",
+        "stage": "荒性泡沫伤害"
+      }
+    },
+    "10000090": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Explosive Grenade": {
+        "source": "elementalburst",
+        "stage": "爆轰榴弹伤害"
+      },
+      "Secondary Explosive Shell": {
+        "source": "elementalburst",
+        "stage": "二重毁伤弹伤害"
+      },
+      "Charge Attack": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Sniper Induced Explosion (C2)": {
+        "source": "const2",
+        "stage": "攻击力倍率伤害"
+      },
+      "Short-Range Rapid Interdiction Fire": {
+        "source": "elementalskill",
+        "stage": "点按伤害"
+      },
+      "Surging Blade (": {
+        "source": "elementalskill",
+        "stage": "流涌之刃伤害"
+      }
+    },
+    "10000091": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "As the Sunlit Sky's Singing Salute": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Rosula Shardshot": {
+        "source": "elementalskill",
+        "stage": "玫瑰晶弹基础伤害"
+      },
+      "Surging Blade": {
+        "source": "elementalskill",
+        "stage": "流涌之刃伤害"
+      }
+    },
+    "10000092": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Suanni's Gilded Dance": {
+        "source": "elementalburst",
+        "stage": "猊兽·文仔砸击伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Charmed Cloudstrider": {
+        "source": "elementalskill",
+        "stage": "下落攻击·踏云献瑞伤害"
+      }
+    },
+    "10000093": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Stars Gather at Dusk (Initial)": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Starwicker": {
+        "source": "elementalburst",
+        "stage": "竹星伤害"
+      },
+      "Charge Attack": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      }
+    },
+    "10000094": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Hiyoku: Twin Blades": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Low Plunge Attack": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Fluttering Hasode (Upward Sweep)": {
+        "source": "elementalskill",
+        "stage": "上挑攻击伤害"
+      }
+    },
+    "10000095": {
+      "Fully-Charged Aimed Shot": {
+        "source": "normalattack",
+        "stage": "满蓄力瞄准射击"
+      },
+      "Mini-Stration Bubble": {
+        "source": "normalattack",
+        "stage": "小小关心气泡伤害"
+      },
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Super Saturated Syringing": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Rebound Hydrotherapy": {
+        "source": "elementalskill",
+        "stage": "激愈水球伤害"
+      }
+    },
+    "10000096": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Normal 5": {
+        "source": "normalattack",
+        "stage": "六段伤害"
+      },
+      "Balemoon Rising": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Charge": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Balemoon Bloodfire (C2)": {
+        "source": "const2",
+        "stage": "攻击力倍率伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "All is Ash (Spike)": {
+        "source": "elementalskill",
+        "stage": "尖刺伤害"
+      },
+      "All is Ash (Cleave)": {
+        "source": "elementalskill",
+        "stage": "切斩伤害"
+      },
+      "Blood Debt Directive": {
+        "source": "elementalskill",
+        "stage": "血偿勒令伤害"
+      }
+    },
+    "10000097": {
+      "Fully-Charged Aimed Shot": {
+        "source": "normalattack",
+        "stage": "瞄准射击"
+      },
+      "Shadowpiercing Shot": {
+        "source": "normalattack",
+        "stage": "贯影箭伤害"
+      },
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      }
+    },
+    "10000098": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Surging Blade": {
+        "source": "elementalskill",
+        "stage": "流涌之刃伤害"
+      },
+      "Last Lightfall": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Charge": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Nightwatch Shade (C1)": {
+        "source": "const1",
+        "stage": "攻击力倍率伤害"
+      },
+      "Glimbright Shade (C6)": {
+        "source": "const6",
+        "stage": "攻击力倍率伤害"
+      },
+      "Impale the Night (0% BoL)": {
+        "source": "elementalskill",
+        "stage": "贯夜伤害"
+      },
+      "Impale the Night (100%+ BoL)": {
+        "source": "elementalskill",
+        "stage": "贯夜伤害"
+      },
+      "Impale the Night (<100% BoL)": {
+        "source": "elementalskill",
+        "stage": "贯夜伤害"
+      }
+    },
+    "10000099": {
+      "Cleardew Cologne (A1)": {
+        "source": "p1",
+        "stage": "攻击力倍率伤害"
+      },
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Lumidouce Case (Level 3)": {
+        "source": "elementalburst",
+        "stage": "柔灯之匣·三阶攻击伤害"
+      },
+      "Charge": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Lumidouce Case (Summon)": {
+        "source": "elementalskill",
+        "stage": "柔灯之匣·一阶攻击伤害"
+      },
+      "Spiritbreath Thorn": {
+        "source": "elementalskill",
+        "stage": "灵息之刺伤害"
+      }
+    },
+    "10000101": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Loop Shot 0": {
+        "source": "elementalskill",
+        "stage": "环绕射击伤害"
+      },
+      "Hail to the Almighty Dragonlord (Skill DMG)": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Hail to the Almighty Dragonlord (Dragon Breath DMG)": {
+        "source": "elementalburst",
+        "stage": "龙息伤害"
+      },
+      "Scalespiker Cannon": {
+        "source": "elementalskill",
+        "stage": "迴猎贯鳞炮伤害"
+      }
+    },
+    "10000102": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Boomsharka-laka": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Charge Attack": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      }
+    },
+    "10000103": {
+      "Blade Roller 0": {
+        "source": "normalattack",
+        "stage": "刃轮巡猎一段伤害"
+      },
+      "Blade Roller 1": {
+        "source": "normalattack",
+        "stage": "刃轮巡猎二段伤害"
+      },
+      "Blade Roller 2": {
+        "source": "normalattack",
+        "stage": "刃轮巡猎三段伤害"
+      },
+      "Blade Roller 3": {
+        "source": "normalattack",
+        "stage": "刃轮巡猎四段伤害"
+      },
+      "Ocelotlicue Point!": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Charge": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Yohual's Scratch": {
+        "source": "elementalskill",
+        "stage": "突进伤害"
+      }
+    },
+    "10000104": {
+      "Fully-Charged Aimed Shot": {
+        "source": "normalattack",
+        "stage": "满蓄力瞄准射击"
+      },
+      "Shadowhunt Shell": {
+        "source": "elementalskill",
+        "stage": "追影弹伤害"
+      },
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Galesplitting Soulseeker Shell": {
+        "source": "elementalburst",
+        "stage": "裂风索魂弹伤害"
+      },
+      "Shining Shadowhunt Shell (C2)": {
+        "source": "const2",
+        "stage": "攻击力倍率伤害"
+      },
+      "Radiant Shadowhunt Shell (C4)": {
+        "source": "const4",
+        "stage": "攻击力倍率伤害"
+      },
+      "Low Plunge Attack": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Spirit Reins, Shadow Hunt": {
+        "source": "elementalskill",
+        "stage": "共鸣伤害"
+      }
+    },
+    "10000105": {
+      "Fully-Charged Aimed Shot": {
+        "source": "normalattack",
+        "stage": "满蓄力瞄准射击"
+      },
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Ritual DMG": {
+        "source": "elementalburst",
+        "stage": "秘仪伤害"
+      },
+      "Soundwave Collision DMG": {
+        "source": "elementalburst",
+        "stage": "音波碰撞伤害"
+      },
+      "Spirit Orb DMG": {
+        "source": "elementalskill",
+        "stage": "宿灵球伤害"
+      }
+    },
+    "10000106": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Flamestrider Normal 0": {
+        "source": "elementalskill",
+        "stage": "驰轮车普通攻击一段伤害"
+      },
+      "Flamestrider Normal 1": {
+        "source": "elementalskill",
+        "stage": "驰轮车普通攻击二段伤害"
+      },
+      "Flamestrider Normal 2": {
+        "source": "elementalskill",
+        "stage": "驰轮车普通攻击三段伤害"
+      },
+      "Flamestrider Normal 3": {
+        "source": "elementalskill",
+        "stage": "驰轮车普通攻击四段伤害"
+      },
+      "Flamestrider Normal 4": {
+        "source": "elementalskill",
+        "stage": "驰轮车普通攻击五段伤害"
+      },
+      "Flamestrider Normal 5": {
+        "source": "elementalskill",
+        "stage": "驰轮车冲刺伤害"
+      },
+      "Flamestrider Normal 6": {
+        "source": "elementalskill",
+        "stage": "驰轮车重击循环伤害"
+      },
+      "Flamestrider Normal 7": {
+        "source": "elementalskill",
+        "stage": "驰轮车重击终结伤害"
+      },
+      "Flamestrider Normal 8": {
+        "source": "elementalskill",
+        "stage": "驰轮车坠地冲击伤害"
+      },
+      "Sunfell Slice": {
+        "source": "elementalburst",
+        "stage": "坠日斩伤害提升"
+      },
+      "Charge": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Flamestrider (C6)": {
+        "source": "const6",
+        "stage": "攻击力倍率伤害"
+      },
+      "Rings of Searing Radiance (C6)": {
+        "source": "const6",
+        "stage": "攻击力倍率伤害"
+      },
+      "Flamestrider Sprint": {
+        "source": "elementalskill",
+        "stage": "驰轮车冲刺伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Flamestrider Plunge": {
+        "source": "elementalskill",
+        "stage": "驰轮车坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "The Named Moment (Flamestrider)": {
+        "source": "elementalskill",
+        "stage": "驰轮车普通攻击一段伤害"
+      },
+      "The Named Moment": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      }
+    },
+    "10000107": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Ice Storm DMG": {
+        "source": "elementalburst",
+        "stage": "冰风暴伤害"
+      },
+      "Spiritvessel Skull DMG": {
+        "source": "elementalburst",
+        "stage": "宿灵之髑伤害"
+      },
+      "Charge Attack": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Spiritvessel Skull DMG (C4)": {
+        "source": "const4",
+        "stage": "元素精通倍率伤害"
+      },
+      "Obsidian Tzitzimitl DMG": {
+        "source": "elementalskill",
+        "stage": "黑曜星魔伤害"
+      },
+      "Frostfall Storm DMG": {
+        "source": "elementalskill",
+        "stage": "霜陨风暴伤害"
+      }
+    },
+    "10000108": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Lustrous Moonrise": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Charged Attack": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      }
+    },
+    "10000109": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Anraku Secret Spring Therapy": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Charge": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Aisa Utamakura Pilgrimage": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      },
+      "Munen Shockwave": {
+        "source": "elementalburst",
+        "stage": "梦念冲击波伤害"
+      }
+    },
+    "10000110": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "The Three Principles of Power": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Charged Attack": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Swift Stormflight": {
+        "source": "normalattack",
+        "stage": "雷霆飞缒伤害"
+      },
+      "Thunderbolt Rush": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      }
+    },
+    "10000111": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Fiery Passion 0": {
+        "source": "normalattack",
+        "stage": "炽热激情状态一段伤害"
+      },
+      "Fiery Passion 1": {
+        "source": "normalattack",
+        "stage": "炽热激情状态二段伤害"
+      },
+      "Fiery Passion 2": {
+        "source": "normalattack",
+        "stage": "炽热激情状态三段伤害"
+      },
+      "Fiery Passion 3": {
+        "source": "normalattack",
+        "stage": "炽热激情状态重击伤害"
+      },
+      "Fiery Passion 4": {
+        "source": "normalattack",
+        "stage": "炽热激情状态下坠期间伤害"
+      },
+      "Fiery Passion 5": {
+        "source": "normalattack",
+        "stage": "炽热激情状态低空/高空坠地冲击伤害"
+      },
+      "Flying Kick": {
+        "source": "elementalburst",
+        "stage": "飞踢伤害"
+      },
+      "Volcano Kablam": {
+        "source": "elementalburst",
+        "stage": "「大火山崩落」伤害"
+      },
+      "Charged Attack": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Fiery Passion Charged Attack": {
+        "source": "normalattack",
+        "stage": "炽热激情状态重击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Rush": {
+        "source": "elementalskill",
+        "stage": "突进伤害"
+      }
+    },
+    "10000112": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Scoring Cuts": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Charge": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Special-Grade Frozen Parfait (C6)": {
+        "source": "const6",
+        "stage": "攻击力倍率伤害"
+      },
+      "Low Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "High Plunge": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      },
+      "Low-Temperature Cooking": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      },
+      "Surging Blade (": {
+        "source": "elementalskill",
+        "stage": "流涌之刃伤害"
+      },
+      "Frosty Parfait": {
+        "source": "elementalskill",
+        "stage": "冻霜芭菲伤害"
+      }
+    },
+    "10000113": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Tonic Shot": {
+        "source": "elementalskill",
+        "stage": "秘药弹伤害"
+      },
+      "Compound Sedation Field": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Sedation Mark": {
+        "source": "elementalburst",
+        "stage": "镇静标记伤害"
+      },
+      "Charge Attack": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Tonic Shot C6": {
+        "source": "const6",
+        "stage": "攻击力倍率伤害"
+      },
+      "Low Plunge Attack": {
+        "source": "normalattack",
+        "stage": "低空/高空坠地冲击伤害"
+      },
+      "Plunge Collision": {
+        "source": "normalattack",
+        "stage": "下坠期间伤害"
+      }
+    },
+    "10000114": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Far to Fall (C1)": {
+        "source": "const1",
+        "stage": "攻击力倍率伤害"
+      }
+    },
+    "10000115": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Radiant Psalter": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Immersive Ordinance": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      }
+    },
+    "10000116": {
+      "Birgitta (A1)": {
+        "source": "p1",
+        "stage": "攻击力倍率伤害"
+      },
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Supreme Instruction: Cyclonic Exterminator": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Charge": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Punishment Edit (C2)": {
+        "source": "const2",
+        "stage": "攻击力倍率伤害"
+      },
+      "A Dawning Morn for You (C6)": {
+        "source": "const6",
+        "stage": "攻击力倍率伤害"
+      },
+      "Cleaning Mode: Carrier Frequency": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      },
+      "Birgitta": {
+        "source": "elementalskill",
+        "stage": "薇尔琪塔放电伤害"
+      }
+    },
+    "10000119": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Frostgrove Sanctuary C6": {
+        "source": "const6",
+        "stage": "元素精通倍率伤害"
+      },
+      "Hymn of Hunting (Press)": {
+        "source": "elementalskill",
+        "stage": "点按伤害"
+      },
+      "Hymn of Eternal Rest (Hold)": {
+        "source": "elementalskill",
+        "stage": "长按一段伤害"
+      },
+      "Hymn of Eternal Rest (Hold) (Lunar-Bloom)": {
+        "source": "elementalskill",
+        "stage": "长按一段伤害"
+      },
+      "Frostgrove Sanctuary": {
+        "source": "elementalskill",
+        "stage": "霜林圣域攻击伤害"
+      }
+    },
+    "10000120": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Normal  (Skill) 0": {
+        "source": "elementalburst",
+        "stage": "技能初始伤害"
+      },
+      "Cometh the Night (Initial)": {
+        "source": "elementalburst",
+        "stage": "技能初始伤害"
+      },
+      "Thunderous Symphony": {
+        "source": "elementalburst",
+        "stage": "雷霆交响伤害"
+      },
+      "Charge": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "The Devil's Wall (C2)": {
+        "source": "const2",
+        "stage": "攻击力倍率伤害"
+      },
+      "Northland Spearstorm": {
+        "source": "elementalskill",
+        "stage": "北国枪阵伤害 "
+      }
+    },
+    "10000121": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      }
     },
     "10000123": {
-      "Confirmation of Purity": { "source": "elementalskill", "stage": "转变·白化之是伤害" },
-      "As the Light Shifts": { "source": "elementalburst", "stage": "白化法·如光流变伤害" },
-      "Dragon of White Flame": { "source": "elementalburst", "stage": "白焰之龙伤害" }
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "As the Light Shifts": {
+        "source": "elementalburst",
+        "stage": "白化法·如光流变伤害"
+      },
+      "Dragon of White Flame": {
+        "source": "elementalburst",
+        "stage": "白焰之龙伤害"
+      },
+      "As the Stars Smolder": {
+        "source": "elementalburst",
+        "stage": "黑度法·如星阴燃伤害"
+      },
+      "Dragon of Dark Decay": {
+        "source": "elementalburst",
+        "stage": "黑蚀之龙伤害"
+      },
+      "Charge": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Confirmation of Purity": {
+        "source": "elementalskill",
+        "stage": "转变·白化之是伤害"
+      },
+      "Denial of Darkness": {
+        "source": "elementalskill",
+        "stage": "转变·黑度之否伤害"
+      }
+    },
+    "10000124": {
+      "Fully-Charged Aimed Shot": {
+        "source": "normalattack",
+        "stage": "满蓄力瞄准射击"
+      },
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Hidden Aces: Seven Tools of the Hunter": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Purrsonal Coordinated Assistance Robot DMG": {
+        "source": "elementalburst",
+        "stage": "猫型家用互助协调器伤害"
+      },
+      "Filled Treasure Flask": {
+        "source": "elementalskill",
+        "stage": "秘藏瓶装满伤害"
+      },
+      "Unfilled Treasure Flask": {
+        "source": "elementalskill",
+        "stage": "秘藏瓶未装满伤害"
+      },
+      "Meowball": {
+        "source": "elementalskill",
+        "stage": "猫猫球伤害"
+      }
+    },
+    "10000125": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Charge Attack": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Moondew Cleanse": {
+        "source": "normalattack",
+        "stage": "月露涤荡伤害"
+      },
+      "Gravity Interference (Lunar-Charged)": {
+        "source": "elementalskill",
+        "stage": "引力干涉·月感电伤害"
+      },
+      "Skill": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      },
+      "Skill (DoT)": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      }
+    },
+    "10000126": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Charge": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Lunar Phase Shift (0 dmg)": {
+        "source": "elementalskill",
+        "stage": "月转时隙一段伤害"
+      },
+      "Spirit Steed's Stride": {
+        "source": "elementalskill",
+        "stage": "灵驹飞踏第一段伤害"
+      }
+    },
+    "10000127": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Shadowless Reflection": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Charge": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Dawnbearing Songbird (Hold)": {
+        "source": "elementalskill",
+        "stage": "长按伤害"
+      }
+    },
+    "10000128": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Sturm und Drang Normal 0": {
+        "source": "elementalskill",
+        "stage": "狂飙突进·一段伤害"
+      },
+      "Sturm und Drang Normal 1": {
+        "source": "elementalskill",
+        "stage": "狂飙突进·二段伤害"
+      },
+      "Sturm und Drang Normal 2": {
+        "source": "elementalskill",
+        "stage": "狂飙突进·三段伤害"
+      },
+      "Sturm und Drang Normal 3": {
+        "source": "elementalskill",
+        "stage": "狂飙突进·四段伤害"
+      },
+      "Sturm und Drang Normal 4": {
+        "source": "elementalskill",
+        "stage": "狂飙突进·五段伤害"
+      },
+      "Sturm und Drang Normal 5": {
+        "source": "elementalskill",
+        "stage": "狂飙突进·重击伤害"
+      },
+      "Northwind Avatar": {
+        "source": "elementalburst",
+        "stage": "技能第一段伤害"
+      },
+      "Charge": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Sturm und Drang Charge": {
+        "source": "elementalskill",
+        "stage": "狂飙突进·重击伤害"
+      },
+      "Azure Devour": {
+        "source": "elementalskill",
+        "stage": "苍噬伤害"
+      },
+      "Varka C2": {
+        "source": "const2",
+        "stage": "攻击力倍率伤害"
+      },
+      "Windbound Execution": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      },
+      "Four Winds' Ascension": {
+        "source": "elementalskill",
+        "stage": "四风将起伤害"
+      }
+    },
+    "10000131": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Revelation: Ladder of Divine Ascent": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Arcane Projection": {
+        "source": "elementalburst",
+        "stage": "奥迹造影伤害"
+      },
+      "Charge": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Revelation: Uncreated Light": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      }
+    },
+    "10000132": {
+      "Banehunter Oathhammer (A1)": {
+        "source": "p1",
+        "stage": "攻击力倍率伤害"
+      },
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "The Bell Tolls! The Hunt Is On!": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
+      },
+      "Witchlure Bell": {
+        "source": "elementalburst",
+        "stage": "诱巫饵铃伤害"
+      },
+      "Charge Attack": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Banehunter Oathhammer Ricochet (C4)": {
+        "source": "const4",
+        "stage": "攻击力倍率伤害"
+      },
+      "Ring-A-Ding-Ding! Hexhunter Chime DMG": {
+        "source": "elementalskill",
+        "stage": "叮铃铃·猎魔之音伤害"
+      },
+      "Clang Clang! Witch-tribution Comes! DMG": {
+        "source": "elementalskill",
+        "stage": "咚锵锵·裁魔之惩伤害"
+      }
+    },
+    "10000150": {
+      "Normal 0": {
+        "source": "normalattack",
+        "stage": "一段伤害"
+      },
+      "Normal 1": {
+        "source": "normalattack",
+        "stage": "二段伤害"
+      },
+      "Normal 2": {
+        "source": "normalattack",
+        "stage": "三段伤害"
+      },
+      "Normal 3": {
+        "source": "normalattack",
+        "stage": "四段伤害"
+      },
+      "Normal 4": {
+        "source": "normalattack",
+        "stage": "五段伤害"
+      },
+      "Presto: Bluebird Finale (Slash)": {
+        "source": "elementalburst",
+        "stage": "斩击伤害"
+      },
+      "Presto: Bluebird Finale (Final)": {
+        "source": "elementalburst",
+        "stage": "斩击最终段伤害"
+      },
+      "Charge": {
+        "source": "normalattack",
+        "stage": "重击伤害"
+      },
+      "Adagio: Phantom Night Dancers": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
+      },
+      "Coda at Dawn's Tolling": {
+        "source": "elementalskill",
+        "stage": "破晓终奏持续伤害"
+      }
     }
   },
-
   "buffs": {
     "_comment": [
       "gcsim 状态名 -> 本地来源（增益库的 libKey）。两个形状：",
@@ -64,7 +4573,6 @@
       "没有列在这里的状态名不挂卡，但会在 --report 里报出来；",
       "reason 行（conditions not met 之类）说明那一击没生效，同样不挂卡。"
     ],
-
     "a-day-carved-from-rising-winds-2pc": "artifact:15044:2",
     "blessing-of-pastoral-winds": "artifact:15044:4",
     "resolve-of-pastoral-winds": "artifact:15044:4",
@@ -72,47 +4580,42 @@
     "celestialgift-4pc-active-buff": "artifact:15045:4",
     "celestialgift-4pc-holder-pyro": "artifact:15045:4",
     "vv-2pc": "artifact:15002:2",
-
     "mistsplitter": "weapon:11509:r1",
     "gest-of-the-mighty-wolf-atkspd": "weapon:12515:r1",
     "gest-of-the-mighty-wolf-stacks": "weapon:12515:r1",
     "tulaytullahsremembrance-atkspd": "weapon:14512:r1",
     "tulaytullahsremembrance-na-dmg": "weapon:14512:r1",
     "lost-prayer": "weapon:14502:r1",
-
     "varka-a1-anemo": "talent:10000128:p1",
     "varka-a1-pyro": "talent:10000128:p1",
     "varka-a4": "talent:10000128:p2",
     "varka-c4-anemo": "constellation:10000128:c4",
     "varka-c4-pyro": "constellation:10000128:c4",
     "varka-c6-cdmg": "constellation:10000128:c6",
-
     "prune-c2": "constellation:10000132:c2",
     "prune-c6-self-buff": "constellation:10000132:c6",
     "prune-c6-active-buff": "constellation:10000132:c6",
     "prune-hex-self-buff": "talent:10000132:p4",
     "prune-hex-team-buff": "talent:10000132:p4",
     "prune-tolling-rally": "talent:10000132:p2",
-
     "grace-of-kenosis": "talent:10000131:p1",
     "guidance-of-theosis": "talent:10000131:p1",
-
     "pyro-res": "party:pyro-resonance",
-
     "vvpyro": "artifact:15002:4",
     "durin-a1-pyro": "talent:10000123:p1",
     "durin-a1-anemo": "talent:10000123:p1"
   },
-
   "extraSources": {
     "_comment": "不属于任何角色的来源（队伍共鸣），键就是 buffs 表里写的那个键。",
     "party:pyro-resonance": {
       "kind": "other",
-      "name": { "chs": "火元素共鸣", "en": "Pyro Resonance" },
+      "name": {
+        "chs": "火元素共鸣",
+        "en": "Pyro Resonance"
+      },
       "rank": ""
     }
   },
-
   "ignored": {
     "swirl-pyro": "扩散反应：由元素附着触发，不属于任何角色的天赋行，无法落到单个来源上"
   }

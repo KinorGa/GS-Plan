@@ -117,6 +117,27 @@ gcsim 用自己的内部 ability 名（`Azure Devour`、`Sturm und Drang Normal 
 - `src/lib/gcsim-sample.js` — 页面侧接线：认 magic bytes 解压 gz/zlib、拉数据集、调上面的函数。
 - `scripts/gcsim-import.mjs` — 命令行侧接线：读盘、写盘，其余都在上面那个模块里。
 
+## 对照表是生成的
+
+`public/data/gcsim-abilities.json` 的 `abilities` 不再手写，由 `scripts/gcsim-map.mjs`
+从 gcsim 的 Go 源码生成：
+
+```
+npm run gcsim:map            # 只打印覆盖率
+node scripts/gcsim-map.mjs --report   # 再列出所有没配上的 ability
+node scripts/gcsim-map.mjs --write    # 写回 gcsim-abilities.json
+```
+
+它从每个 `info.AttackInfo{...}`（以及散在文件里的 `ai.Abil = "..."`）里读出 ability 名，
+用「名字属于哪个文件」定来源，再拿名字去对本地 `public/data/char/en/<id>.json` 的英文行名——
+英文行和中文行**逐行对齐**（生成器自己断言这件事），所以对上英文行就等于对上中文 `stage`。
+
+`characters` 只写推断不出的别名，来源是 gcsim 自己的 `pkg/shortcut` 表；`weapons` / `sets`
+目前都能按英文名推断，是空的。
+
+**不猜。** 配不上的 ability 宁可不写（导入时会出现在报告里），也不写一个像是对的错行；
+旅行者按元素分文件，暂不生成。当前 113 个角色里 112 个有表，约 90% 的 ability 落到行上。
+
 ## 维护
 
 - **新角色**：gcsim 名推不出本地 id 时脚本会直接报错，并说清在 `characters` 里补哪一条；

@@ -15,6 +15,7 @@
     "stats:build": "node scripts/build-stats.mjs",
     "stats:update": "node scripts/fetch-stats.mjs && node scripts/build-stats.mjs",
     "gcsim:import": "node scripts/gcsim-import.mjs",
+    "gcsim:map": "node scripts/gcsim-map.mjs",
     "test": "node tests/run.mjs",
     "test:browser": "node tests/run.mjs --browser"
   },
