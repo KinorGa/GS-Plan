@@ -84,7 +84,7 @@
 | sim | 25 | artifact | 22 |
 | shield | 11 | | |
 
-导入器只消费 `damage`（翻成轴上的条目）。
+导入器消费 `damage`（翻成轴上的条目）和它同帧的 `calc`（取这一击真用的倍率 `talent`）。
 
 ### damage 事件
 
@@ -121,13 +121,13 @@
 ### 三种「状态」形态
 
 1. **普通状态**（绝大多数）：直接是 `[行, 行, ...]`，数值就在行里。
-2. **只报是谁、不报数值**（`resist_mods`）：值是「名字 + 行」交替，倍率在天赋/套装文本里，
-   日志不给。需要在对照表里按行名写死 `{ source, stats }`：
+2. **`resist_mods`**：和 `pre_damage_mods` 同一种「名字 + 行」嵌套形状，装的是减抗。**日志里带数值**
+   （`amount` 是小数，`ele` 说是哪种抗性），导入器直接读，不在对照表里写死：
 
    ```jsonc
    "resist_mods": [
-     "vvpyro", [ "status: added", "ele: pyro", "amount: -0.4" ],
-     "durin-a1-pyro", [ "status: added", "ele: pyro", "amount: -0.35" ]
+     "vvpyro",       [ "status: added", "ele: pyro", "amount: -0.4" ],
+     "durin-a1-pyro",[ "status: added", "ele: pyro", "amount: -0.35" ]
    ]
    ```
 3. **`pre_damage_mods`**：和 `resist_mods` 同一种「名字 + 行」嵌套形状，装的是**逐击的
@@ -140,8 +140,8 @@
    ]
    ```
 
-   **当前导入器把 `pre_damage_mods` 放进了 `HIT_KEYS` 直接跳过**，所以这些加成全部丢失
-   （见「已知缺口」）。
+   导入器把它拆开后交给和普通状态同一条路径（`absorb`），所以每一击的 `dmg%` 都进到该行的
+   「通用伤害加成」里。
 
 ### calc 事件 —— 数值核对的金矿
 
@@ -192,8 +192,10 @@ bonus_dmg / def_mod / res_mod / talent` 每一项都能和本地面板逐项对�
 
 ## 已知缺口（截至当前）
 
-- **`pre_damage_mods` 被跳过**：逐击的 `dmg%`（法尔伽 A4 +22%、布伦妮「tolling rally」+25% 等）
-  全部丢失，导致本地的「通用伤害加成」偏小。
-- **命中映射表按招式名落到一行**：多段招式（例如杜林的爆发 3 段 `202.23/163.88/190.13`）
-  在日志里是同一 `abil` 的连续多击，导入器把它们并成**一行、一个 `stageIndex`、没有 `partIndex`**，
-  于是本地只算了第 0 段。
+没有。之前记在这里的两条都已修复：
+
+- ~~`pre_damage_mods` 被跳过~~：现在拆开走普通状态那条路径，逐击的 `dmg%` 进到行里；
+- ~~多段招式并成一行、只算第 0 段~~：现在按 `(倍率, 元素)` 拆成父子条目，每段带自己的 `scaling`。
+
+剩下的差异只有「本地天赋表 / gcsim 用的列不同」这一条，由 `scaling` 兜住——
+见 [GCSIM.md](./GCSIM.md) 的「倍率：以 gcsim 自己的数为准」。

@@ -397,6 +397,26 @@ export default function DamageCard({
   overridden = null,
   partIndex: partIndexProp = null,
   element: elementProp = null,
+  // THE ROW'S PARTS, when the HOST knows them better than the table does.
+  //
+  // An imported gcsim row carries its own coefficients and hit counts (see
+  // `axis-compute.computePart`): 法尔伽's 狂飙突进 runs at 220% of the table
+  // value, and a multi-part skill fires several coefficients the table holds at
+  // once. Without this the card re-read the LOCAL table, computed from part 0,
+  // and then REPORTED that reading back -- which rebuilt the row's children and
+  // threw the imported ones away. Passing the host's parts keeps the card, the
+  // row and the report agreeing.
+  partsOverride = null,
+  // GCSIM'S OWN NUMBERS for this row, when the importer pinned them.
+  //
+  // `scaling` is `{ mult?, hits? }` -- the exact coefficient and hit count the
+  // imported run logged, which the local talent table cannot express (法尔伽's
+  // 狂飙突进 runs at 220% of the table value). Either field may be absent, in
+  // which case the table's value stands; that is why it is applied PER FIELD
+  // below rather than replacing the part wholesale. It is separate from
+  // `partsOverride`, which says HOW MANY parts the row has: this only changes
+  // the numbers of the part being computed.
+  scaling = null,
   // WHICH HIT this card is showing, when a host owns that choice.
   //
   // A CHILD of a compound row must show the row its PARENT selected. The card's
@@ -638,10 +658,18 @@ export default function DamageCard({
    * `char-sources.parseMultiplierParts`, so the coefficient is a reading of the
    * talent text rather than a second source of truth.
    */
-  const parts = stage.parts || null;
+  const parts = partsOverride || stage.parts || null;
   const partIdx = Math.min(Math.max(0, partIndexProp || 0), (parts?.length || 1) - 1);
   const activePart = parts ? parts[partIdx] : { mult: stage.mult, hits: stage.hits };
-  const effectiveStage = { mult: activePart.mult, hits: activePart.hits, bonus: stage.bonus };
+  // THE IMPORTED NUMBERS WIN, field by field: `scaling` may carry only a
+  // multiplier, only a hit count, or both, and whatever it leaves out falls
+  // back to the table. Replacing the whole part would turn a missing field
+  // into `undefined` and the damage into `NaN`.
+  const effectiveStage = {
+    mult: scaling?.mult ?? activePart.mult,
+    hits: scaling?.hits ?? activePart.hits,
+    bonus: stage.bonus,
+  };
   const hitElementName = elementProp || source.element;
 
   // Works for both the internal setter (functional) and a controlled host

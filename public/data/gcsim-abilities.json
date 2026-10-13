@@ -59,7 +59,8 @@
     "_comment": [
       "gcsim 状态名 -> 本地来源（增益库的 libKey）。两个形状：",
       "  字符串 = 本地来源键，数值取日志里那一击自己带的数（fraction 自动 x100）；",
-      "  对象   = 日志只说了是哪一种减抗、没说数值（resist_mods），数值来自天赋/套装说明。",
+      "  容器   = pre_damage_mods / resist_mods 把若干子状态打包成一串 name,[lines]；逐个解包，",
+      "           dmg% 之类按本地字段读，减抗按行里的 ele+amount 直接算。",
       "没有列在这里的状态名不挂卡，但会在 --report 里报出来；",
       "reason 行（conditions not met 之类）说明那一击没生效，同样不挂卡。"
     ],
@@ -76,10 +77,12 @@
     "gest-of-the-mighty-wolf-atkspd": "weapon:12515:r1",
     "gest-of-the-mighty-wolf-stacks": "weapon:12515:r1",
     "tulaytullahsremembrance-atkspd": "weapon:14512:r1",
+    "tulaytullahsremembrance-na-dmg": "weapon:14512:r1",
     "lost-prayer": "weapon:14502:r1",
 
     "varka-a1-anemo": "talent:10000128:p1",
     "varka-a1-pyro": "talent:10000128:p1",
+    "varka-a4": "talent:10000128:p2",
     "varka-c4-anemo": "constellation:10000128:c4",
     "varka-c4-pyro": "constellation:10000128:c4",
     "varka-c6-cdmg": "constellation:10000128:c6",
@@ -89,17 +92,16 @@
     "prune-c6-active-buff": "constellation:10000132:c6",
     "prune-hex-self-buff": "talent:10000132:p4",
     "prune-hex-team-buff": "talent:10000132:p4",
+    "prune-tolling-rally": "talent:10000132:p2",
 
     "grace-of-kenosis": "talent:10000131:p1",
     "guidance-of-theosis": "talent:10000131:p1",
 
     "pyro-res": "party:pyro-resonance",
 
-    "resist_mods": {
-      "vvpyro": { "source": "artifact:15002:4", "stats": { "resShredPyro": 40 } },
-      "durin-a1-pyro": { "source": "talent:10000123:p1", "stats": { "resShredPyro": 20 } },
-      "durin-a1-anemo": { "source": "talent:10000123:p1", "stats": { "resShredAnemo": 20 } }
-    }
+    "vvpyro": "artifact:15002:4",
+    "durin-a1-pyro": "talent:10000123:p1",
+    "durin-a1-anemo": "talent:10000123:p1"
   },
 
   "extraSources": {

@@ -86,6 +86,7 @@ import { pathToFileURL } from 'node:url';
 const { buildSources } = await import('../src/char-sources.js');
 const { SLOT_KEYS, SUB_COUNT, blankPiece, mainStatValue } = await import('../src/lib/artifact-model.js');
 const { buildUnitSources } = await import('../src/lib/buff-sources.js');
+const { damageTypeSuffix } = await import('../src/lib/elements.js');
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const arg = (name, fallback) => {
@@ -253,6 +254,28 @@ export function importGcsim({
   };
 
   const damage = (sample.logs || []).filter((e) => e.event === 'damage');
+  // gcsim emits a `calc` right after each `damage`, carrying the EXACT
+  // multiplier that hit used (`calc.talent`) -- the oracle the row split below
+  // needs, and the only place the true motion value (mode bonus, per-part
+  // coefficient) is written down.
+  //
+  // PAIRED BY ORDER, NOT BY KEY. Two parts of one cast land on the SAME frame
+  // with the same ability name (苍噬 fires part0 and part1 together), so
+  // `char_index|frame|abil` collides and a keyed lookup would hand both hits the
+  // same part -- the 34 rows that stayed wrong. The log lists the pair
+  // damage-then-calc, so matching each calc to the pending damage of its own
+  // (character, ability) is exact.
+  const calcForDamage = new Map();
+  const pendingCalc = new Map();
+  for (const e of sample.logs || []) {
+    if (e.event === 'damage') {
+      pendingCalc.set(`${e.char_index}|${e.logs?.abil}`, e);
+    } else if (e.event === 'calc') {
+      const k = `${e.char_index}|${e.logs?.abil}`;
+      const d = pendingCalc.get(k);
+      if (d) { calcForDamage.set(d, e); pendingCalc.delete(k); }
+    }
+  }
   let seq = 0;
   const nextId = () => `e${++seq}`;
 
@@ -262,7 +285,9 @@ export function importGcsim({
   let run = null;
   const flush = () => {
     if (!run) return;
-    const { ci, ability, hits, total, critAll, critNone, ele, buffs } = run;
+    const {
+      ci, ability, hits, total, critAll, critNone, ele, events,
+    } = run;
     run = null;
 
     const cd = details[ci];
@@ -286,25 +311,142 @@ export function importGcsim({
       ...src,
       stages: src.stages.map((st, i) => (i === stageIndex ? { ...st, hits } : st)),
     };
+    const elementOf = (e) => (e ? e[0].toUpperCase() + e.slice(1) : null);
+    const enemyOverrides = enemyLevel != null ? { enemyLevel } : {};
+
     // THE ROW'S OWN CARDS. Grouped by source, so two statuses naming one source
     // (法尔伽's a1-anemo and a1-pyro are both p1) become one card holding both.
-    const cards = rowDrops([...buffs.values()], sourceOf, pushBuffNote);
-    for (const c of cards) {
-      const rec = cardCount.get(c.source.libKey)
-        || { libKey: c.source.libKey, kind: c.source.kind, name: c.source.name, rows: 0, hits: 0 };
-      rec.rows += 1;
-      rec.hits += hits;
-      cardCount.set(c.source.libKey, rec);
+    const attachCards = (map, count) => {
+      const cards = rowDrops([...map.values()], sourceOf, pushBuffNote);
+      for (const c of cards) {
+        const rec = cardCount.get(c.source.libKey)
+          || { libKey: c.source.libKey, kind: c.source.kind, name: c.source.name, rows: 0, hits: 0 };
+        rec.rows += 1;
+        rec.hits += count;
+        cardCount.set(c.source.libKey, rec);
+      }
+      return cards;
+    };
+
+    /**
+     * The `scaling` a row or child carries so it reproduces gcsim's OWN number.
+     *
+     * gcsim writes the multiplier it used (`calc.talent`) and logs one event per
+     * hit, neither of which the local talent table can express: 法尔伽's 狂飙突进
+     * runs at 220% of the table value, its C1 doubles 四风将起, and a multi-part
+     * skill fires several coefficients that must be kept apart. `computePart`
+     * lets `scaling` WIN over the table. `null` when the table already agrees,
+     * so an ordinary row keeps a clean override set.
+     */
+    const scalingFor = (talent, count, localMult, localHits) => {
+      const s = {};
+      if (talent != null && Number.isFinite(talent) && localMult
+        && Math.abs(talent / localMult - 1) > 1e-6) {
+        s.mult = talent;
+      }
+      if (count != null && localHits && count !== localHits) s.hits = count;
+      return Object.keys(s).length ? s : null;
+    };
+
+    // SPLIT THE RUN BY THE PART EACH HIT IS.
+    //
+    // gcsim logs one event per hit, and one ability fires several parts whose
+    // motion values DIFFER (杜林's burst is 202.23/163.88/190.13), or the same
+    // part at a situational multiplier (法尔伽's 狂飙突进 220%, its C1's 200%).
+    // A single row holding one `stageIndex` and no `partIndex` computed part 0
+    // for EVERY hit -- which is why a multi-part skill showed one wrong number
+    // and its segments did not match. So a run with more than one distinct
+    // (multiplier, element) pair becomes a PARENT with one child per pair, each
+    // child carrying that hit's own multiplier, buffs and crit mode.
+    const groups = [];
+    for (const h of events) {
+      const key = `${h.talent}|${h.ele}`;
+      let g = groups.find((x) => x.key === key);
+      if (!g) {
+        g = { key, talent: h.talent, ele: h.ele, count: 0, crits: [], buffs: new Map() };
+        groups.push(g);
+      }
+      g.count += 1;
+      g.crits.push(h.crit);
+      for (const [id, p] of h.buffs) {
+        const prev = g.buffs.get(id);
+        if (prev && prev.value !== p.value) {
+          // Two hits of one part disagree on a value (a stack count that moved
+          // between them). The FIRST wins and the drift is reported rather than
+          // silently averaged.
+          pushBuffNote({
+            kind: 'buff-value-drift', status: String(id).split('\u0000')[0], source: p.source,
+            key: p.key, from: prev.value, to: p.value, ability,
+          });
+          continue;
+        }
+        g.buffs.set(id, p);
+      }
     }
+
+    if (groups.length <= 1) {
+      // ONE NUMBER: the ordinary row, exactly as before -- plus a multiplier
+      // override only when gcsim's differs from the table's.
+      const g = groups[0];
+      const scaling = scalingFor(g.talent, hits, stage.mult, stage.hits);
+      entries.push({
+        id: nextId(),
+        charId: idFor[ci].id,
+        element: elementOf(g.ele || ele),
+        drops: attachCards(g.buffs, hits),
+        ...(scaling ? { scaling } : {}),
+        statOverrides: { ...enemyOverrides },
+        critMode: critAll ? 'crit' : critNone ? 'never' : 'avg',
+        picked: { sourceKey: mapped.source, stageIndex },
+        summary: { sourceKey: mapped.source, sourceLabel },
+        note: noteText(hits, total, critAll, critNone),
+      });
+      return;
+    }
+
+    const parentId = nextId();
+    const parts = groups.map((g, i) => ({
+      partIndex: i,
+      mult: g.talent ?? stage.parts?.[i]?.mult ?? stage.mult,
+      hits: g.count,
+    }));
+    const children = groups.map((g, i) => {
+      const localMult = stage.parts?.[i]?.mult ?? stage.mult;
+      const localHits = stage.parts?.[i]?.hits ?? stage.hits;
+      const scaling = scalingFor(g.talent, g.count, localMult, localHits);
+      const allCrit = g.crits.every(Boolean);
+      const noneCrit = g.crits.every((c) => !c);
+      return {
+        id: `${parentId}-p${i}`,
+        partIndex: i,
+        element: elementOf(g.ele),
+        drops: attachCards(g.buffs, g.count),
+        ...(scaling ? { scaling } : {}),
+        statOverrides: { ...enemyOverrides },
+        critMode: allCrit ? 'crit' : noneCrit ? 'never' : 'avg',
+        expanded: false,
+      };
+    });
     entries.push({
-      id: nextId(),
+      id: parentId,
       charId: idFor[ci].id,
-      element: ele ? ele[0].toUpperCase() + ele.slice(1) : null,
-      drops: cards,
-      statOverrides: enemyLevel != null ? { enemyLevel } : {},
+      element: elementOf(ele),
+      // A compound row holds no buffs of its own -- each child carries its
+      // own, which is the reason the split exists.
+      drops: [],
+      statOverrides: { ...enemyOverrides },
       critMode: critAll ? 'crit' : critNone ? 'never' : 'avg',
       picked: { sourceKey: mapped.source, stageIndex },
-      summary: { sourceKey: mapped.source, sourceLabel },
+      summary: {
+        sourceKey: mapped.source,
+        sourceLabel,
+        parts,
+        partCount: groups.length,
+        perHit: hits ? total / hits : 0,
+        total,
+        hits,
+      },
+      children,
       note: noteText(hits, total, critAll, critNone),
     });
   };
@@ -316,7 +458,7 @@ export function importGcsim({
       flush();
       run = {
         ci, ability: L.abil, hits: 0, total: 0, critAll: true, critNone: true,
-        ele: L.ele, buffs: new Map(),
+        ele: L.ele, events: [],
       };
     }
     run.hits += 1;
@@ -324,13 +466,32 @@ export function importGcsim({
     run.critAll = run.critAll && Boolean(L.crit);
     run.critNone = run.critNone && !L.crit;
 
+    // THIS HIT'S OWN SLICE. The row is no longer one merged buff map: a run can
+    // hold several PARTS, so each hit keeps its own statuses and the split at
+    // flush time can hand each part exactly what IT had.
+    const hitCalc = calcForDamage.get(event);
+    const hit = {
+      talent: hitCalc?.logs?.talent != null ? Number(hitCalc.logs.talent) : null,
+      crit: Boolean(L.crit),
+      ele: L.ele || null,
+      buffs: new Map(),
+    };
+    run.events.push(hit);
+
     // THE CARDS ARE THE HIT'S OWN. Each status the log lists for this hit was
     // live for it, so a row collects exactly what its hits had.
-    for (const [name, raw] of Object.entries(L)) {
-      if (HIT_KEYS.has(name)) continue;
+    /**
+     * Absorb ONE status (or sub-status): map it to a source, read its lines,
+     * and record each mod on the run.
+     *
+     * NOT a `continue`-able loop body: `pre_damage_mods` (below) holds several
+     * sub-statuses that must go through exactly this path, so it is a function
+     * the whole `Object.entries` walk and the unwrapper both call.
+     */
+    const absorb = (name, raw) => {
       if (!buffTable[name]) {
         pushBuffNote({ kind: 'buff-status-unknown', status: name, ability: L.abil });
-        continue;
+        return;
       }
       for (const p of statusLines(name, raw, buffTable, pushBuffNote)) {
         // Deduped BY STATUS, not just by source+stat. A status listed on several
@@ -340,7 +501,7 @@ export function importGcsim({
         // additional 300") genuinely stack, and collapsing them would understate
         // the row by 300 ATK.
         const id = `${name}\u0000${p.source}\u0000${p.key}`;
-        const prev = run.buffs.get(id);
+        const prev = hit.buffs.get(id);
         if (prev && prev.value !== p.value) {
           // Never happens on the sample this was built against (a merged run
           // sits inside one buff state), but if it ever did the row must not
@@ -351,8 +512,68 @@ export function importGcsim({
           });
           continue;
         }
-        run.buffs.set(id, p);
+        hit.buffs.set(id, p);
       }
+    };
+
+    /**
+     * Absorb ONE resistance shred from `resist_mods`.
+     *
+     * Its entries are also `name, [lines]` pairs, but the line the app needs is
+     * `amount` (a fraction like `-0.35`), paired with `ele` to say WHICH
+     * resistance. Read straight from the log: the log DOES carry the number, and
+     * the table used to hardcode it instead -- 20 for 杜林's `durin-a1-*`, whose
+     * real amount is 35. That is exactly the 0.94 every 杜林 / 布伦妮 / 法尔伽
+     * row was off by, a wrong resistance hiding behind a matched panel.
+     */
+    const absorbResist = (sub, raw) => {
+      const source = buffTable[sub];
+      if (typeof source !== 'string') {
+        pushBuffNote({ kind: 'buff-status-unknown', status: sub, ability: L.abil });
+        return;
+      }
+      const line = {};
+      for (const s of (Array.isArray(raw) ? raw : [])) {
+        const at = String(s).indexOf(':');
+        if (at < 0) continue;
+        line[String(s).slice(0, at).trim()] = String(s).slice(at + 1).trim();
+      }
+      const amount = Number(line.amount);
+      const suffix = damageTypeSuffix(line.ele);
+      if (!Number.isFinite(amount) || !suffix) {
+        pushBuffNote({ kind: 'buff-inactive', status: sub, line: 'amount', text: line.amount });
+        return;
+      }
+      const key = `resShred${suffix}`;
+      const value = round6(Math.abs(amount) * 100);
+      const id = `${sub}\u0000${source}\u0000${key}`;
+      const prev = hit.buffs.get(id);
+      if (prev && prev.value !== value) {
+        pushBuffNote({
+          kind: 'buff-value-drift', status: sub, source, key, from: prev.value, to: value, ability: L.abil,
+        });
+        return;
+      }
+      hit.buffs.set(id, { source, key, value });
+    };
+
+    for (const [name, raw] of Object.entries(L)) {
+      if (HIT_KEYS.has(name)) continue;
+      // `pre_damage_mods` and `resist_mods` are CONTAINERS, not statuses: each
+      // packs several sub-statuses as `name, [lines]` pairs. They are the
+      // per-hit damage% and resistance shreds that apply at the moment of the
+      // hit -- 法尔伽's 风帜的先引 stacks, 布伦妮's 振铃鼓舞, 翠绿之影's shred.
+      // Unwrap them, or they are skipped and the row's bonus / resistance comes
+      // up short.
+      if (name === 'pre_damage_mods') {
+        for (const [sub, subRaw] of nestedStatuses(raw)) absorb(sub, subRaw);
+        continue;
+      }
+      if (name === 'resist_mods') {
+        for (const [sub, subRaw] of nestedStatuses(raw)) absorbResist(sub, subRaw);
+        continue;
+      }
+      absorb(name, raw);
     }
   }
   flush();
@@ -648,10 +869,30 @@ const LINE_STAT = {
   'dendro%': { key: 'dendroDmg', pct: true },
 };
 
+/**
+ * The `name, [lines]` pairs a CONTAINER status holds.
+ *
+ * `pre_damage_mods` does not follow the ordinary `[line, line]` shape: it is a
+ * flat list of a bare name string followed by THAT sub-status's own line array,
+ * repeated (`['varka-a4', ['status: added', 'dmg%: 0.22'], ...]`). Unwrapping it
+ * here lets each sub-status go through `statusLines` unchanged.
+ */
+function nestedStatuses(raw) {
+  const list = Array.isArray(raw) ? raw : [];
+  const out = [];
+  for (let i = 0; i < list.length; i += 1) {
+    if (typeof list[i] === 'string' && Array.isArray(list[i + 1])) {
+      out.push([list[i], list[i + 1]]);
+      i += 1;
+    }
+  }
+  return out;
+}
+
 /** The keys a `damage` event carries about the HIT rather than about a status. */
 const HIT_KEYS = new Set([
   'abil', 'amp', 'attack-tag', 'cata', 'crit', 'damage', 'ele',
-  'pre_damage_mods', 'source_frame', 'target',
+  'source_frame', 'target',
 ]);
 
 /** `25.000000000000004`-style float dust, trimmed after the x100. */

@@ -157,6 +157,31 @@ function EntryGroup({
   const parentStage = heldStage ?? 0;
 
   /**
+   * THE PARENT'S OWN PARTS, for the picker card.
+   *
+   * An IMPORTED compound row's split is gcsim's, not the talent table's: the run
+   * logs several coefficients the local row does not hold as separate parts (or
+   * does not hold at all). The picker card computes from the table and REPORTS
+   * the part count it found, and that report is what decides how many children
+   * the row has (`setEntrySummary` -> `syncChildren`). So the moment an imported
+   * row was expanded its own picker reported the table's count -- measured: two
+   * children became none, and the row collapsed to a single part.
+   *
+   * Pinning the row's OWN parts stops that: the card reports what the row already
+   * has instead of the table's reading of it.
+   *
+   * ONLY WHILE THE ROW STILL MATCHES the one those parts describe. A fresh pick
+   * moves `picked` ahead of `summary`, and pinning the OLD row's parts there
+   * would describe the wrong row -- so during that gap the table is allowed to
+   * speak, which is exactly how a pick rebuilds the split.
+   */
+  const parentParts = (
+    Array.isArray(entry.summary?.parts) && entry.summary.parts.length
+    && entry.summary.sourceKey === heldKey
+    && (entry.summary.stageIndex ?? 0) === (heldStage ?? 0)
+  ) ? entry.summary.parts : null;
+
+  /**
    * A menu row was clicked. Hold the choice until the card reports its parts.
    *
    * `onPick` knows the source key and the stage index but NOT how many numbers the
@@ -685,6 +710,8 @@ function EntryGroup({
             stageIndex={parentStage}
             onPick={onPickRow}
             onSummary={onCardSummary}
+            // THE ROW'S OWN PARTS: see `parentParts` above.
+            partsOverride={parentParts}
             // THE PARENT'S OWN CRIT MODE, stored on the entry.
             //
             // WITHOUT THIS THE ROW SILENTLY REVERTED TO 期望. The card keeps
@@ -738,8 +765,14 @@ function ChildEntry({ child, index, total, parent, team, teamScope, L, setChild,
   // are read off `parent.summary` rather than stored on the child -- storing them
   // would let a child disagree with the row it belongs to.
   const part = parent.summary?.parts?.[child.partIndex];
-  const label = part
-    ? `${L({ chs: '第', en: 'Part' })} ${child.partIndex + 1} · ${(part.mult * 100).toFixed(2)}%${part.hits > 1 ? ` ×${part.hits}` : ''}`
+  // GCSIM'S OWN NUMBER WINS, as it does everywhere else this row is drawn: the
+  // label must name the coefficient the part is ACTUALLY computed at, and an
+  // imported part carries its own (`child.scaling`) which the parent's report
+  // may have overwritten on `summary`.
+  const mult = child.scaling?.mult ?? part?.mult;
+  const partHits = child.scaling?.hits ?? part?.hits;
+  const label = mult != null
+    ? `${L({ chs: '第', en: 'Part' })} ${child.partIndex + 1} · ${(mult * 100).toFixed(2)}%${partHits > 1 ? ` ×${partHits}` : ''}`
     : `${L({ chs: '第', en: 'Part' })} ${child.partIndex + 1}`;
 
   const entryLike = {
@@ -748,6 +781,9 @@ function ChildEntry({ child, index, total, parent, team, teamScope, L, setChild,
     // The child's own, never the parent's.
     drops: child.drops,
     statOverrides: child.statOverrides,
+    // Its own multiplier / hit count too, for the same reason: a part of a
+    // multi-part skill computes from gcsim's own coefficient, not the table's.
+    scaling: child.scaling,
     // Also the child's: a note says something about THIS half ("swirl
     // carries the aura"), which is not true of its sibling.
     note: child.note || '',

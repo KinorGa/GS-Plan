@@ -217,7 +217,8 @@ npm run gcsim:import
 产物 `data/gcsim-config.json` 用规划器的「导入」载入。每行带一条 note 记录 gcsim 的单击/合计，
 可直接和旁边的面板数对照。面板也一起重建：圣遗物词条取样本的 `add stats` 聚合值，
 **增益卡逐条照抄日志**——每条只挂它自己那几击里真正生效的来源，数值也取那一刻的数。
-对照表、维护方式与已知差异见 **[docs/GCSIM.md](docs/GCSIM.md)**。
+**倍率也取 gcsim 自己的数**（`scaling`）：多段招式按段拆成父子条目，展开一段不会把整行塌回去。
+对照表与维护方式见 **[docs/GCSIM.md](docs/GCSIM.md)**。
 
 ## 数据与素材
 

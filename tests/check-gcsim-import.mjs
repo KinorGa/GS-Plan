@@ -277,5 +277,68 @@ eq(
 );
 eq(buffed.report.buffs.cards.find((c) => c.libKey === 'artifact:15044:2').hits, 2, 'the 2-piece reached two of the five hits');
 
+/* --- 6. a run of distinct parts splits, and the axis agrees ---------------- */
+console.log('\n6. distinct parts become children, and the axis computes each one');
+// 苍噬 (Azure Devour) fires two halves in ONE cast. gcsim logs them back to
+// back with different elements and different \`calc.talent\` values, and they
+// must NOT be merged into one row: the halves meet different resistances and
+// carry different coefficients, so a single number is a number that belongs to
+// neither of them.
+const splitSample = {
+  ...sample,
+  logs: [
+    { event: 'damage', char_index: 0, frame: 30, logs: { abil: 'Azure Devour', ele: 'anemo', crit: true, damage: 100 } },
+    { event: 'calc', char_index: 0, frame: 30, logs: { abil: 'Azure Devour', talent: 1.5 } },
+    { event: 'damage', char_index: 0, frame: 31, logs: { abil: 'Azure Devour', ele: 'cryo', crit: true, damage: 200 } },
+    { event: 'calc', char_index: 0, frame: 31, logs: { abil: 'Azure Devour', talent: 3.0 } },
+  ],
+};
+const split = importGcsim({ sample: splitSample, mapping, catalogues, charData, talentDamage, setBonuses });
+const splitRows = split.doc.axes[0].entries;
+eq(splitRows.length, 1, 'one cast is one entry, not one row per hit');
+const parent = splitRows[0];
+eq(parent.children?.length, 2, 'two distinct parts become two children');
+eq(parent.summary.parts?.length, 2, 'the summary carries a part per child');
+eq(parent.children.map((c) => c.partIndex).join(','), '0,1', 'children are indexed by part');
+eq(parent.children[0].element, 'Anemo', 'part 1 keeps its own element');
+eq(parent.children[1].element, 'Cryo', 'part 2 keeps its own element');
+eq(parent.children.every((c) => !c.drops.length), true, 'a log with no statuses attaches no cards');
+
+// The numbers themselves: the axis must compute each child at GCSIM'S
+// coefficient, not at the table's -- that is the whole point of \`scaling\`.
+const { computeAxis } = await import('../src/lib/axis-compute.js');
+const { activeArtifacts } = await import('../src/lib/artifact-sets.js');
+const stats = read('data/stats-compact.json');
+const catalogue = {
+  chars: read('data/charlist.json'),
+  weapons: read('data/weaponlist.json'),
+  stats,
+};
+const crew = split.doc.team.units.map((u) => ({
+  id: u.char.id,
+  element: catalogue.chars[u.char.id]?.element,
+  level: u.char.level ?? 90,
+  constellation: u.char.constellation ?? 0,
+  refine: u.weapon?.refine ?? 1,
+  talents: u.char.talents || null,
+  weaponId: u.weapon?.id ?? null,
+  artifacts: activeArtifacts(u),
+  detail: charData[u.char.id],
+}));
+const axis = computeAxis(split.doc.axes[0].entries, crew, catalogue, talentDamage);
+const computed = axis.byId.get(parent.id);
+eq(computed.parts.length, 2, 'the axis computes both parts');
+near(computed.parts[0].mult, 1.5, 'part 1 uses gcsim\'s coefficient', 1e-6);
+near(computed.parts[1].mult, 3.0, 'part 2 uses gcsim\'s coefficient', 1e-6);
+eq(computed.parts[0].element, 'Anemo', 'part 1 is measured against its own element');
+eq(computed.parts[1].element, 'Cryo', 'part 2 is measured against its own element');
+near(
+  computed.total,
+  computed.parts.reduce((n, p) => n + p.total, 0),
+  'the row total is the sum of its parts (nothing double-counts, nothing is dropped)',
+  1e-9
+);
+eq(computed.parts[1].perHit > computed.parts[0].perHit, true, 'the larger coefficient hits harder');
+
 console.log(bad ? `\n${bad} PROBLEMS` : '\nall checks passed');
 process.exit(bad ? 1 : 0);

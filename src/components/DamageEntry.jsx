@@ -81,6 +81,13 @@ function DamageEntry({
   // is why nothing about the ordinary path changes.
   partIndex,
   element,
+  // THE HOST'S OWN PARTS for this card, when it knows the row better than the
+  // table does. Forwarded verbatim; unset for the ordinary path and for a child,
+  // which both read the table plus `entry.scaling`. `EntryGroup` supplies it for
+  // the compound parent's PICKER: without it the picker card re-read the table,
+  // reported a different part count, and that report rebuilt -- and destroyed --
+  // the imported children. See `partsOverride` in `DamageCard`.
+  partsOverride = null,
   // Store the row's OWN element, for a single-stage row. Kept on the entry (like
   // `critMode`/`reactionKey`) so a refresh does not silently revert the hit to the
   // character's element and change the resistance it is measured against.
@@ -406,7 +413,15 @@ function DamageEntry({
     const pinnedPart = partIndex != null ? partIndex : sel.partIndex;
     const parts = stage.parts || [{ mult: stage.mult, hits: stage.hits }];
     const part = parts[Math.min(pinnedPart || 0, parts.length - 1)];
-    const effective = { mult: part.mult, hits: part.hits, bonus: stage.bonus };
+    // AN IMPORTED ROW CARRIES ITS OWN SCALING (see `axis-compute.computePart`):
+    // gcsim's exact multiplier and hit count, which beat the table's. Read here
+    // too so the collapsed row and the axis cannot disagree about it.
+    const scaling = entry.scaling || null;
+    const effective = {
+      mult: scaling?.mult ?? part.mult,
+      hits: scaling?.hits ?? part.hits,
+      bonus: stage.bonus,
+    };
     const usedElement = element || sel.element || src.element;
 
     // `panelStats` -- the SAME panel the card computes from, so the row and the
@@ -445,7 +460,7 @@ function DamageEntry({
     // `char` is a dependency because the defence zone reads its level -- without
     // it the row keeps a number computed at the old level after the panel changes.
     // `zoneMult` too: dropping a card that names its own zone must move the row.
-  }, [entry.summary, entry.charId, panelStats, charData, sources, partIndex, element, char, zoneMult]);
+  }, [entry.summary, entry.charId, panelStats, charData, sources, partIndex, element, char, zoneMult, entry.scaling]);
 
   const summary = liveSummary;
 
@@ -770,6 +785,11 @@ function DamageEntry({
       // ordinary entry, which is what keeps the ordinary path unchanged.
       partIndex={partIndex}
       element={element}
+      // GCSIM'S OWN MULTIPLIER, when the importer pinned one. The card must
+      // compute the same figure `liveSummary` above just computed; without it the
+      // expanded card read the table and disagreed with the collapsed row.
+      scaling={entry.scaling || null}
+      partsOverride={partsOverride}
       // WHICH HIT, when a parent owns the choice. A child must show the row
       // its parent selected rather than its own default.
       sourceKey={sourceKeyProp}
@@ -833,6 +853,10 @@ function DamageEntry({
           stageIndex={stageIndexProp}
           onPick={onPickProp}
           stageLocked={stageLocked}
+          // THE PARENT'S OWN PARTS, when the host pinned them: see the
+          // `partsOverride` prop note. Unset for a hand-picked row, which lets
+          // the table describe the row the user just chose.
+          partsOverride={partsOverride}
           onSummary={handleSummary}
         />
       </div>

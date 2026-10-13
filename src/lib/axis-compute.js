@@ -95,6 +95,7 @@ export function panelForEntry(entry, ctx) {
  */
 function computePart({
   entry, ctx, char, charData, panel, sources, partIndex, element, drops, overrides, critMode,
+  mult: multOverride, hits: hitsOverride,
 }) {
   const sel = entry.summary;
   const src = sources.find((s) => s.key === (sel?.sourceKey || entry.picked?.sourceKey)) || sources[0];
@@ -108,8 +109,17 @@ function computePart({
   // case the stage's own multiplier is the part.
   const parts = stage.parts || null;
   const idx = Math.min(Math.max(0, partIndex || 0), (parts?.length || 1) - 1);
-  const activePart = parts ? parts[idx] : { mult: stage.mult, hits: stage.hits };
+  const activePart = (parts ? parts[idx] : null) || { mult: stage.mult, hits: stage.hits };
   if (!activePart) return null;
+
+  // AN IMPORTED ROW KNOWS ITS OWN NUMBERS. gcsim logs the exact multiplier it
+  // used and how many hits it rolled, which the local talent table cannot
+  // express -- 法尔伽's 狂飙突进 runs at 220% of the table value, its C1 doubles
+  // 四风将起, and a multi-part skill fires several coefficients that the row must
+  // keep apart. So an entry may carry `scaling`; when it does, it WINS, and the
+  // table is only the fallback for a row written by hand.
+  const partMult = multOverride != null ? multOverride : activePart.mult;
+  const partHits = hitsOverride != null ? hitsOverride : activePart.hits;
 
   // The buffs on the cards THIS part holds.
   const allBuffs = (drops || []).flatMap((d) => d.buffs);
@@ -129,7 +139,7 @@ function computePart({
   const usedElement = element || sel?.element || src.element || null;
 
   const r = computeDamage(withBuffs, {
-    stage: { mult: activePart.mult, hits: activePart.hits, bonus: stage.bonus },
+    stage: { mult: partMult, hits: partHits, bonus: stage.bonus },
     reaction: reactionByKey(entry.reactionKey ?? sel?.reactionKey),
     element: usedElement,
     critMode: critMode || 'avg',
@@ -142,8 +152,8 @@ function computePart({
     element: usedElement,
     perHit: r.perHit,
     total: r.total,
-    hits: activePart.hits || 1,
-    mult: activePart.mult,
+    hits: partHits || 1,
+    mult: partMult,
   };
 }
 
@@ -204,6 +214,8 @@ export function computeEntry(entry, ctx) {
       element: c.element || null,
       drops: c.drops,
       overrides: c.statOverrides,
+      mult: c.scaling?.mult,
+      hits: c.scaling?.hits,
       // A child without a mode of its own reads the PARENT's, so setting the row
       // to 必定暴击 applies to both halves rather than only to the ones that
       // happen to have been touched.
@@ -226,6 +238,8 @@ export function computeEntry(entry, ctx) {
     drops: entry.drops,
     overrides: null,
     critMode: entry.critMode || null,
+    mult: entry.scaling?.mult,
+    hits: entry.scaling?.hits,
   });
   if (!one) return null;
   return { parts: [one], perHit: one.perHit, total: one.total, hits: one.hits };
