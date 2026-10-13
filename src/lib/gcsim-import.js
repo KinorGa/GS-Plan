@@ -131,6 +131,7 @@ export function importGcsim({
   const ignored = mapping.ignored || {};
   const buffTable = mapping.buffs || {};
   const extraSources = mapping.extraSources || {};
+  const calcRules = mapping.calc || {};
 
   // gcsim char -> local id, once, up front: an unresolvable character makes the
   // whole run meaningless, so it throws rather than dropping every hit.
@@ -236,6 +237,210 @@ export function importGcsim({
       if (d) { calcForDamage.set(d, e); pendingCalc.delete(k); }
     }
   }
+
+  const indexById = new Map(idFor.map(({ index, id }) => [id, index]));
+
+  /**
+   * The `flat_dmg` each character's OWN hits carried, in log order.
+   *
+   * A 附加伤害 buff scales off its OWNER's panel (尼可's C4 adds 70% of HER ATK to
+   * someone else's hit), and the hit's calc event never records that panel -- so
+   * the split back into sources cannot come from the hit itself. What isolates
+   * one source is a character whose own hits carry NOTHING BUT it: 杜林's C1 is
+   * others-only, so his own `flat_dmg` IS 尼可's C4 unit, and his dense hit log
+   * becomes the timeline that unit is read from. The mapping's `observedBy` says
+   * which character isolates which rule.
+   *
+   * Reactions are excluded (their `flat_dmg` is the reaction's base damage, not
+   * a buff) and so are hits an ability-rule claims exclusively (a Unity hit's
+   * flat is 尼可's p4 alone, which would pollute the C4 timeline it sits beside).
+   */
+  const flatRules = calcRules.flatDmg || [];
+  const abilityRuleFor = (ability) => flatRules.find((r) => {
+    if (!r.ability) return false;
+    const pat = String(r.ability);
+    // `/pattern/` is a regex (the ability names are gcsim's and drift); anything
+    // else is an exact string.
+    if (pat.length > 2 && pat.startsWith('/') && pat.endsWith('/')) {
+      return new RegExp(pat.slice(1, -1)).test(ability || '');
+    }
+    return pat === ability;
+  });
+  const observedFlat = new Map(); // char index -> [{ frame, flat }]
+  for (const e of damage) {
+    const ability = e.logs?.abil;
+    if (REACTION.test(ability || '') || abilityRuleFor(ability)) continue;
+    const flat = Number(calcForDamage.get(e)?.logs?.flat_dmg) || 0;
+    if (flat <= 0) continue;
+    let rows = observedFlat.get(e.char_index);
+    if (!rows) observedFlat.set(e.char_index, (rows = []));
+    rows.push({ frame: e.frame ?? 0, flat });
+  }
+
+  /**
+   * Each character's ATK over the run, learned from their OWN calc events.
+   *
+   * A 附加伤害 rule can declare its value directly (`factor` x its owner's ATK,
+   * 杜林's C1 = 60% of his), and the hit's calc event never records that panel --
+   * only the owner's own calc events do. `base_atk > 0` keeps reactions and
+   * HP/DEF-scaling hits out: their `total_scaling` is not an ATK.
+   */
+  const scalingTimeline = new Map(); // char index -> [{ frame, atk }]
+  for (const e of sample.logs || []) {
+    if (e.event !== 'calc') continue;
+    const lg = e.logs || {};
+    if (!(Number(lg.base_atk) > 0)) continue;
+    const atk = Number(lg.total_scaling);
+    if (!Number.isFinite(atk) || atk <= 0) continue;
+    let rows = scalingTimeline.get(e.char_index);
+    if (!rows) scalingTimeline.set(e.char_index, (rows = []));
+    rows.push({ frame: e.frame ?? 0, atk });
+  }
+
+  /**
+   * The values a rule can contribute at ONE frame, as distinct candidates.
+   *
+   * WHICH sources are live on a given hit is per-character state the log never
+   * writes down (尼可's C4 cycles on and off EACH character with her burst, so
+   * 杜林's own timeline says what the C4 unit IS but not WHETHER 法尔伽 had it).
+   * The answer is read off the total instead: try the candidate values and keep
+   * the combination that reproduces it.
+   *
+   * An `observedBy` rule offers EVERY distinct value the observer ever showed,
+   * not just the ones near this frame: the observer's own coverage has holes
+   * (杜林's C4 is off for long stretches, exactly where 法尔伽's is on), and the
+   * unit itself is one of a handful of nicole-ATK states, so the full set is
+   * small and an exact match still identifies it. An `of`+`factor` rule reads
+   * the owner's ATK NEAR the frame instead -- that timeline has no holes (the
+   * owner's own calc events are dense), and the window is what keeps a buff
+   * state from two rotations ago out of the candidate set.
+   */
+  const FLAT_WINDOW = 300;
+  const flatCandidates = (r, frame) => {
+    const out = new Set();
+    if (r.observedBy != null) {
+      for (const s of observedFlat.get(indexById.get(String(r.observedBy))) || []) {
+        out.add(s.flat);
+      }
+    } else if (r.of != null && r.factor != null) {
+      for (const s of scalingTimeline.get(indexById.get(String(r.of))) || []) {
+        if (Math.abs(s.frame - frame) <= FLAT_WINDOW) out.add(round6(Number(r.factor) * s.atk));
+      }
+    }
+    return [...out];
+  };
+
+  const setHitBuff = (hit, name, source, key, value) => {
+    hit.buffs.set(`${name}\u0000${source}\u0000${key}`, { source, key, value });
+  };
+
+  /**
+   * Split one hit's `flat_dmg` into the cards `calc.flatDmg` declares.
+   *
+   * THE LOGGED TOTAL IS THE TRUTH; the rules only decide the SPLIT. Which
+   * sources were live on ONE hit is per-character state the log never writes
+   * down -- 尼可's C4 cycles on and off EACH character with her burst, so 法尔伽
+   * has hits with C4+C1, with C1 alone and with C4 alone inside one rotation.
+   * The split is therefore READ OFF THE TOTAL: every subset of the applicable
+   * rules, every combination of their candidate values at this frame, and the
+   * one that reproduces the logged `flat_dmg` wins.
+   *
+   * Within the winner every rule but the last takes its candidate value and the
+   * last takes the residue, so the cards always sum to EXACTLY what gcsim
+   * rolled even when a candidate had to come from the far side of the window.
+   * A total no combination can explain is not split by guessing: it lands whole
+   * on the first applicable rule and the report says why.
+   */
+  const attachCalcFlat = (hit, ci, calcL, frame, ability) => {
+    const flat = Number(calcL.flat_dmg) || 0;
+    if (flat <= 0) return;
+    const exclusive = abilityRuleFor(ability);
+    if (exclusive) {
+      setHitBuff(hit, 'calc:flat_dmg', exclusive.source, 'flatDmg', round6(flat));
+      return;
+    }
+    const charId = idFor[ci].id;
+    const rules = flatRules.filter((r) => !r.ability && String(r.notFor || '') !== charId);
+    if (!rules.length) {
+      pushBuffNote({ kind: 'buff-calc-flat-no-rule', ability, value: round6(flat) });
+      return;
+    }
+    const cands = rules.map((r) => flatCandidates(r, frame));
+    let best = null;
+    const walk = (i, sum, picks) => {
+      if (i === rules.length) {
+        if (!picks.length) return;
+        const err = Math.abs(sum - flat);
+        if (!best || err < best.err) best = { err, picks };
+        return;
+      }
+      walk(i + 1, sum, picks); // this source was not live on the hit
+      for (const pred of cands[i]) walk(i + 1, sum + pred, [...picks, { source: rules[i].source, pred }]);
+    };
+    walk(0, 0, []);
+    if (!best || best.err > Math.max(2, flat * 0.02)) {
+      pushBuffNote({
+        kind: 'buff-calc-flat-unexplained', ability, value: round6(flat),
+        closest: best ? round6(best.picks.reduce((n, p) => n + p.pred, 0)) : null,
+      });
+      best = { picks: [{ source: rules[0].source, pred: flat }] };
+    }
+    const picks = best.picks;
+    const values = picks.map((p, i) => (i === picks.length - 1 ? 0 : p.pred));
+    values[picks.length - 1] = flat - values.reduce((n, v) => n + v, 0);
+    // Residue dust (a fraction of a point) is folded into the rule above rather
+    // than drawing a card worth 0.3.
+    if (values.length > 1 && Math.abs(values[values.length - 1]) <= 1) {
+      values[values.length - 2] += values[values.length - 1];
+      values[values.length - 1] = 0;
+    }
+    picks.forEach((p, i) => {
+      if (!values[i]) return;
+      setHitBuff(hit, 'calc:flat_dmg', p.source, 'flatDmg', round6(values[i]));
+    });
+  };
+
+  /**
+   * `ignore_def` (无视防御), split by the shares `calc.ignoreDef` declares.
+   *
+   * The calc event records ONE total and each share is a DIFFERENT card: 0.4 is
+   * 尼可's C6 alone, 0.3 on 杜林's own early burst hits is HIS C6 before hers
+   * reaches, 0.7 is both. Which is read off the total the same way `flat_dmg`
+   * is -- every subset of the applicable shares, the one summing to the logged
+   * value wins. A share can be scoped (`forChar`) so 杜林's C6 is never offered
+   * to another character's hit. A total no subset reproduces lands whole on the
+   * first share: the number stays right, and the report shows the drift.
+   */
+  const attachCalcIgnoreDef = (hit, ci, calcL) => {
+    const total = Number(calcL.ignore_def) || 0;
+    if (total <= 1e-6) return;
+    const charId = idFor[ci].id;
+    const rules = (calcRules.ignoreDef || []).filter(
+      (r) => !r.forChar || String(r.forChar) === charId
+    );
+    let best = null;
+    const walk = (i, sum, picks) => {
+      if (i === rules.length) {
+        const err = Math.abs(sum - total);
+        if (!best || err < best.err) best = { err, picks };
+        return;
+      }
+      walk(i + 1, sum, picks);
+      walk(i + 1, sum + (Number(rules[i].share) || 0), [...picks, rules[i]]);
+    };
+    walk(0, 0, []);
+    if (!best || best.err > 0.005 || !best.picks.length) {
+      if (best?.err <= 0.005 && !best.picks.length) return; // dust, not a buff
+      pushBuffNote({ kind: 'buff-calc-ignore-def-unexplained', value: round6(total * 100) });
+      if (rules.length) {
+        setHitBuff(hit, 'calc:ignore_def', rules[0].source, 'defIgnore', round6(total * 100));
+      }
+      return;
+    }
+    for (const r of best.picks) {
+      setHitBuff(hit, 'calc:ignore_def', r.source, 'defIgnore', round6(Number(r.share) * 100));
+    }
+  };
   let seq = 0;
   const nextId = () => `e${++seq}`;
 
@@ -535,6 +740,45 @@ export function importGcsim({
       hit.buffs.set(id, { source, key, value });
     };
 
+    /**
+     * Absorb ONE defence reduction from `def_mods`.
+     *
+     * Same `name, [lines]` container as `resist_mods`, but its line is `amount`
+     * alone (`-0.3` for 杜林's c6) -- a defence debuff names no element because it
+     * lowers the enemy's DEF against EVERY hit. Read from the log rather than
+     * hardcoded, for the same reason as the resist shreds: the number is right
+     * there, and a stale constant is a wrong number wearing a matched panel.
+     */
+    const absorbDef = (sub, raw) => {
+      const source = buffTable[sub];
+      if (typeof source !== 'string') {
+        pushBuffNote({ kind: 'buff-status-unknown', status: sub, ability: L.abil });
+        return;
+      }
+      const line = {};
+      for (const s of (Array.isArray(raw) ? raw : [])) {
+        const at = String(s).indexOf(':');
+        if (at < 0) continue;
+        line[String(s).slice(0, at).trim()] = String(s).slice(at + 1).trim();
+      }
+      const amount = Number(line.amount);
+      if (!Number.isFinite(amount)) {
+        pushBuffNote({ kind: 'buff-inactive', status: sub, line: 'amount', text: line.amount });
+        return;
+      }
+      const key = 'defShred';
+      const value = round6(Math.abs(amount) * 100);
+      const id = `${sub}\u0000${source}\u0000${key}`;
+      const prev = hit.buffs.get(id);
+      if (prev && prev.value !== value) {
+        pushBuffNote({
+          kind: 'buff-value-drift', status: sub, source, key, from: prev.value, to: value, ability: L.abil,
+        });
+        return;
+      }
+      hit.buffs.set(id, { source, key, value });
+    };
+
     for (const [name, raw] of Object.entries(L)) {
       if (HIT_KEYS.has(name)) continue;
       // `pre_damage_mods` and `resist_mods` are CONTAINERS, not statuses: each
@@ -551,7 +795,26 @@ export function importGcsim({
         for (const [sub, subRaw] of nestedStatuses(raw)) absorbResist(sub, subRaw);
         continue;
       }
+      if (name === 'def_mods') {
+        for (const [sub, subRaw] of nestedStatuses(raw)) absorbDef(sub, subRaw);
+        continue;
+      }
       absorb(name, raw);
+    }
+
+    // THE TWO FACTORS ONLY THE CALC EVENT KNOWS.
+    //
+    // `flat_dmg` (附加伤害值) and `ignore_def` (无视防御) appear ONLY on the calc
+    // event -- no damage-event status lists them, so the absorb pass above can
+    // never see them, and a hit can carry 5,766 of 附加伤害 and 40% 无视防御 while
+    // its card list says nothing. Only a hit whose ability WILL become a row
+    // gets them: a reaction's or an unmapped ability's cards are dropped at
+    // flush, and decoding them would only fill the report with notes about rows
+    // that do not exist.
+    const calcL = hitCalc?.logs;
+    if (calcL && abilities[idFor[ci].id]?.[L.abil]) {
+      attachCalcFlat(hit, ci, calcL, event.frame ?? 0, L.abil);
+      attachCalcIgnoreDef(hit, ci, calcL);
     }
   }
   for (const cast of casts) flush(cast);

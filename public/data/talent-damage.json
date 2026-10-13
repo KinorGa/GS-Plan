@@ -17209,17 +17209,17 @@
       "const1": {
         "kind": "constellation",
         "icon": "UI_Talent_S_Nicole_01",
-        "damage": false,
-        "mult": null,
-        "basis": null,
+        "damage": true,
+        "mult": 6,
+        "basis": "攻击力",
         "element": null,
         "hits": 1,
         "verified": false,
-        "needsReview": true,
+        "needsReview": false,
         "candidate": true,
-        "reason": "no explicit multiplier in the text",
         "name": "「不要惧怕，蒙眷爱的人之子呀」",
-        "text": "队伍中自己的当前场上角色攻击命中敌人时，将会额外召唤出特殊的「奥迹造影·合一」，对敌人进行协同攻击，依据该角色的元素类型，造成对应元素范围伤害，该伤害相当于该角色攻击力的600%，并视为由该角色造成的伤害。 该效果每6秒至多触发一次。"
+        "text": "队伍中自己的当前场上角色攻击命中敌人时，将会额外召唤出特殊的「奥迹造影·合一」，对敌人进行协同攻击，依据该角色的元素类型，造成对应元素范围伤害，该伤害相当于该角色攻击力的600%，并视为由该角色造成的伤害。 该效果每6秒至多触发一次。",
+        "note": "该伤害相当于该角色攻击力的600%：奥迹造影·合一为协同攻击，由当前场上角色的元素决定元素类型。"
       },
       "const2": {
         "kind": "constellation",

@@ -30,6 +30,10 @@ export const STAT_META = {
   flatHp: { chs: '固定生命值', en: 'Flat HP' },
   flatAtk: { chs: '固定攻击力', en: 'Flat ATK' },
   flatDef: { chs: '固定防御力', en: 'Flat DEF' },
+  /* 附加伤害值, not 固定伤害: the term is the game's own (附加伤害), a flat sum
+     added after the talent multiplier, and it scales with no panel stat of the
+     attacker -- "flat damage" alone would read as another name for flat ATK. */
+  flatDmg: { chs: '附加伤害值', en: 'Flat DMG' },
   em: { chs: '元素精通', en: 'Elemental Mastery' },
   critRate: { chs: '暴击率', en: 'CRIT Rate', suffix: '%' },
   critDmg: { chs: '暴击伤害', en: 'CRIT DMG', suffix: '%' },

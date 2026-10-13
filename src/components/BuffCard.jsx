@@ -191,6 +191,9 @@ export const BUFF_KEYS = {
   ])),
   defShred: { chs: '防御降低', en: 'DEF Shred', suffix: '%', sign: true },
   defIgnore: { chs: '无视防御', en: 'DEF Ignore', suffix: '%', sign: true },
+  // A flat sum added AFTER the talent multiplier (尼可 C4's 先导之佑 is the
+  // example): no `%` suffix, because the value is a damage number, not a rate.
+  flatDmg: { chs: '附加伤害值', en: 'Flat DMG', suffix: '', sign: true },
   normalDmg: { chs: '普攻伤害', en: 'Normal ATK DMG', suffix: '%', sign: true },
   chargedDmg: { chs: '重击伤害', en: 'Charged ATK DMG', suffix: '%', sign: true },
   plungeDmg: { chs: '下落攻击伤害', en: 'Plunge DMG', suffix: '%', sign: true },

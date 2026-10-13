@@ -210,6 +210,12 @@ function printReport(report, outFile) {
       console.error(`增益：状态「${n.status}」的 ${n.line} =「${n.text}」，这一击没生效，不挂卡。`);
     } else if (n.kind === 'buff-source-missing') {
       console.error(`增益：来源 ${n.source} 在这支队伍里不存在，挂在它上面的数值没能落到行里。`);
+    } else if (n.kind === 'buff-calc-flat-no-rule') {
+      console.error(`增益：「${n.ability}」带着附加伤害 ${n.value}，但 calc 表里没有可归属的规则，这几击没挂这张卡。`);
+    } else if (n.kind === 'buff-calc-flat-unexplained') {
+      console.error(`增益：「${n.ability}」的附加伤害 ${n.value} 拆不成 calc 表里的来源（最接近 ${n.closest}），整笔挂给了第一条规则。`);
+    } else if (n.kind === 'buff-calc-ignore-def-unexplained') {
+      console.error(`增益：无视防御 ${n.value}% 拆不成 calc 表里的份额，整笔挂给了第一条规则。`);
     } else {
       console.error(`增益：${n.status} 的 ${n.key} 在一行内出现了两个值（${n.from} / ${n.to}），取了第一个。`);
     }

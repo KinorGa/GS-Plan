@@ -4241,6 +4241,10 @@
       "Denial of Darkness": {
         "source": "elementalskill",
         "stage": "转变·黑度之否伤害"
+      },
+      "Arcane Projection: Unity": {
+        "source": "elementalburst",
+        "stage": "白焰之龙伤害"
       }
     },
     "10000124": {
@@ -4447,6 +4451,10 @@
       "Four Winds' Ascension": {
         "source": "elementalskill",
         "stage": "四风将起伤害"
+      },
+      "Arcane Projection: Unity": {
+        "source": "elementalburst",
+        "stage": "技能第一段伤害"
       }
     },
     "10000131": {
@@ -4477,6 +4485,10 @@
       "Revelation: Uncreated Light": {
         "source": "elementalskill",
         "stage": "技能伤害"
+      },
+      "Arcane Projection: Unity": {
+        "source": "const1",
+        "stage": "攻击力倍率伤害"
       }
     },
     "10000132": {
@@ -4519,6 +4531,10 @@
       "Clang Clang! Witch-tribution Comes! DMG": {
         "source": "elementalskill",
         "stage": "咚锵锵·裁魔之惩伤害"
+      },
+      "Arcane Projection: Unity": {
+        "source": "elementalburst",
+        "stage": "技能伤害"
       }
     },
     "10000150": {
@@ -4603,7 +4619,54 @@
     "pyro-res": "party:pyro-resonance",
     "vvpyro": "artifact:15002:4",
     "durin-a1-pyro": "talent:10000123:p1",
-    "durin-a1-anemo": "talent:10000123:p1"
+    "durin-a1-anemo": "talent:10000123:p1",
+    "nicole-c2": "constellation:10000131:c2",
+    "nicole-c2-pyro": "constellation:10000131:c2",
+    "nicole-c2-anemo": "constellation:10000131:c2",
+    "durin-c2-anemo": "constellation:10000123:c2",
+    "durin-c2-pyro": "constellation:10000123:c2",
+    "durin-c4": "constellation:10000123:c4",
+    "durin-c6": "constellation:10000123:c6"
+  },
+  "calc": {
+    "_comment": [
+      "calc 事件独有的两个因子 -> 本地来源（增益库 libKey）。damage 事件的状态列表里",
+      "看不到它们，只有 calc 事件的 flat_dmg / ignore_def 字段记得，所以规则写在这里。",
+      "ignoreDef: 每条是一份 无视防御；对每一击试所有份额组合，和与日志 ignore_def 相等者胜。",
+      "forChar 限定该份额只给这个角色自己的命中（杜林C6的无视防御只加在他自己身上）。",
+      "flatDmg: ability 命中的规则独占整笔（奥迹造影 = 尼可p4，吃不到C4/C1）；其余同样试组合：",
+      "observedBy 表示该源的值可由某角色自己的 flat_dmg 观察到（杜林C1只给队友，所以他自己的",
+      "flat_dmg 就是尼可C4的量）；of+factor 表示该源的值 = factor x of角色的攻击力（读他自己的",
+      "calc 事件）；notFor 跳过该角色自己的命中。命中是否带着某个源，日志不写，只能从总数反推——",
+      "组合能复现 flat_dmg 的就是答案；每条规则取自己的候选值，最后一条拿剩余，和恒等于日志总数。"
+    ],
+    "ignoreDef": [
+      {
+        "source": "constellation:10000131:c6",
+        "share": 0.4
+      },
+      {
+        "source": "constellation:10000123:c6",
+        "share": 0.3,
+        "forChar": "10000123"
+      }
+    ],
+    "flatDmg": [
+      {
+        "source": "talent:10000131:p4",
+        "ability": "/^Arcane Projection/"
+      },
+      {
+        "source": "constellation:10000131:c4",
+        "observedBy": "10000123"
+      },
+      {
+        "source": "constellation:10000123:c1",
+        "of": "10000123",
+        "factor": 0.6,
+        "notFor": "10000123"
+      }
+    ]
   },
   "extraSources": {
     "_comment": "不属于任何角色的来源（队伍共鸣），键就是 buffs 表里写的那个键。",

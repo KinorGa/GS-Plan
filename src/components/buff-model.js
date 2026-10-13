@@ -70,6 +70,10 @@ export const KEY_TO_STAT = {
   atk: 'flatAtk', atkPct: 'atkPct',
   hp: 'flatHp', hpPct: 'hpPct',
   def: 'flatDef', defPct: 'defPct',
+  // 附加伤害值: a flat sum added to the hit AFTER the talent multiplier, not a
+  // stat on the attacker's panel -- but the panel field is where the fold puts
+  // it so `computeDamage` can add it in (see `lib/damage.js`).
+  flatDmg: 'flatDmg',
   em: 'em', critRate: 'critRate', critDmg: 'critDmg', er: 'er',
   dmgBonus: 'dmgBonus', physBonus: 'physBonus', reactionBonus: 'reactionBonus',
   // Each element maps to ITS OWN panel field, one to one -- no guessing at the

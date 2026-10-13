@@ -141,7 +141,13 @@ export function computeDamage(
   const totalDef = def * (1 + defPct / 100) + flatDef;
 
   const talent = stage.mult * (1 + (stage.bonus || 0)) * (1 + talentBonus / 100);
-  const base = totalAtk * talent;
+  // 附加伤害值 sits OUTSIDE the talent multiplier but INSIDE the bonus bracket:
+  // `(atk * talent + flatDmg) * (1 + dmg%)`. That is the game's own order (a
+  // 附加伤害 source like 尼可 C4 scales off ITS owner's ATK and adds a flat sum to
+  // the hit), and it is the order gcsim's calc events record
+  // (`(total_scaling * talent + flat_dmg) * (1 + bonus_dmg) * ...`, verified
+  // against every damage event in an export).
+  const base = totalAtk * talent + (stats.flatDmg || 0);
 
   // Amplifying reaction (Vaporize / Melt): 2.78 x EM / (EM + 1400),
   // plus any flat "reaction DMG bonus" the kit provides.

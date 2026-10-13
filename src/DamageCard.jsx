@@ -223,6 +223,10 @@ export const STAT_DEFS = [
   { key: 'dmgBonus', chs: '通用伤害加成', en: 'All DMG Bonus', suffix: '%', def: 0, step: 5, group: 'dmg' },
   { key: 'physBonus', chs: '物理伤害加成', en: 'Physical DMG Bonus', icon: 'physical', suffix: '%', def: 0, step: 5, group: 'dmg' },
   { key: 'reactionBonus', chs: '反应伤害提升', en: 'Reaction DMG Bonus', suffix: '%', def: 0, step: 5, group: 'dmg' },
+  // 附加伤害值 is not a stat the character HOLDS: it is a flat sum a buff adds
+  // to the hit after the talent multiplier (尼可's C4 is the example), so it
+  // carries no `%` and sits with the damage fields rather than the base rows.
+  { key: 'flatDmg', chs: '附加伤害值', en: 'Flat DMG', def: 0, step: 100, group: 'dmg' },
 
   { key: 'defShred', chs: '防御降低', en: 'DEF Shred', suffix: '%', def: 0, step: 5, group: 'enemy' },
   { key: 'defIgnore', chs: '无视防御', en: 'DEF Ignore', suffix: '%', def: 0, step: 5, group: 'enemy' },

@@ -220,14 +220,14 @@ function abilEntries(text) {
   while ((m = re.exec(text))) {
     const expr = m[1];
     const lit = /^"((?:[^"\\]|\\.)*)"$/.exec(expr);
-    if (lit) { out.push({ name: lit[1] }); continue; }
+    if (lit) { out.push({ name: lit[1], at: m.index }); continue; }
     if (/^fmt\.Sprintf/.test(expr)) {
       const inner = /"((?:[^"\\]|\\.)*)"/.exec(expr);
-      out.push(inner ? { template: inner[1] } : { unknown: expr });
+      out.push(inner ? { template: inner[1], at: m.index } : { unknown: expr, at: m.index });
       continue;
     }
     const vv = new RegExp(expr + '\\s*=\\s*"((?:[^"\\\\]|\\\\.)*)"').exec(text);
-    out.push(vv ? { name: vv[1] } : { unknown: expr });
+    out.push(vv ? { name: vv[1], at: m.index } : { unknown: expr, at: m.index });
   }
   return out;
 }
@@ -254,6 +254,30 @@ function slotStage(id, slot) {
   const entry = talentDamage.characters?.[id]?.[slot];
   if (!entry || entry.damage !== true || !(Number(entry.mult) > 0)) return null;
   return entry.basis ? `${entry.basis}倍率伤害` : '伤害';
+}
+
+/**
+ * The slot a cons/passive Abil sits in, read from the enclosing function name.
+ *
+ * gcsim writes a constellation's attack inside that constellation's own function
+ * (`c1Init`, `c1`, `makeC6CB`) and a passive's inside `a1...`. When the ability
+ * name carries no `(C1)`/`(A1)` marker there is otherwise nothing to place it by,
+ * and such a name used to be dropped (妮可's 奥迹造影·合一 in `c1Init`).
+ *
+ * The slot is returned ONLY when the curated table marks it as a damage row, so a
+ * coincidental function name cannot invent a hit.
+ */
+function fileSlotOf(part, text, at, id) {
+  if (!/^(cons|const\d|asc|passive|passives|p\d)$/.test(part)) return null;
+  const before = text.slice(0, at);
+  const re = /func \([^)]*\)\s*([A-Za-z0-9_]+)\s*\(/g;
+  let m, name = null;
+  while ((m = re.exec(before))) name = m[1];
+  if (!name) return null;
+  const sm = /[cCaA](\d)/.exec(name);
+  if (!sm) return null;
+  const slot = (/[cC]/.test(sm[0][0]) ? 'const' : 'p') + sm[1];
+  return slotStage(id, slot) ? slot : null;
 }
 
 function abilitiesForChar(ch, files) {
@@ -288,9 +312,13 @@ function abilitiesForChar(ch, files) {
       }
       const hit = matchAny(raw, src, prefer);
       // a damage ability may only land on a row that carries a multiplier
-      if (hit && !hit.row.numeric) {
-        misses.push(`${ch} | ${part} | ${raw} (matched a non-damage row: ${hit.row.en})`);
-      } else if (hit) abilities[raw] = { source: hit.source, stage: hit.row.chs };
+      if (hit && hit.row.numeric) { abilities[raw] = { source: hit.source, stage: hit.row.chs }; continue; }
+      // No row answered under its own source. An attack written inside a
+      // constellation's own function and marked there as damage lands on that
+      // slot even when its name carries no `(C1)` to say so.
+      const fileSlot = fileSlotOf(part, text, e.at, id);
+      if (fileSlot) { abilities[raw] = { source: fileSlot, stage: slotStage(id, fileSlot) }; continue; }
+      if (hit) misses.push(`${ch} | ${part} | ${raw} (matched a non-damage row: ${hit.row.en})`);
       else misses.push(`${ch} | ${part} | ${raw}`);
     }
   }
@@ -404,6 +432,9 @@ if (WRITE) {
     sets: { ...current.sets, ...setOv },
     abilities: table,
     buffs: current.buffs,
+    // `calc` is curated by hand (it encodes game mechanics the Go source does
+    // not spell out), so the generator carries it over the way it does `buffs`.
+    calc: current.calc,
     extraSources: current.extraSources,
     ignored: current.ignored,
   };
