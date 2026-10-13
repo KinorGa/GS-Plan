@@ -122,7 +122,11 @@ README 只讲规划器（`planner.html`）；这份文档讲**整个仓库里都
   - `entry-clipboard.js`（`ENTRY_MIME`/`entriesToJson`/`entriesToText`/`parseEntriesJson`）、`buff-clipboard.js`。
 - **文件读写**
   - `data-file.js` — `buffs.html` 的磁盘文件（File System Access API），退化时只用 localStorage。
-  - `config-file.js`（`CONFIG_KIND='lunaris-config'`）、`json-cache.js`。
+  - `config-file.js`（`CONFIG_KIND='lunaris-config'`、`CONFIG_VERSION`）、`json-cache.js`。
+  - `axes-pool.js` — **文件边界上的去重**：把整份配置里重复的*描述符*收进 `pools`，行里只留
+    `sourceRef` / `buffRefs` / `summary.sourceLabelRef`。池的键是**整个对象**，所以
+    `atkPct=25` 和 `atkPct=18` 是两条增益（按 key 去重会把它们并成一条，静悄悄地算错伤害）。
+    只在导出/导入、localStorage、导入器输出上用；内存里仍是内联形状。
 - **Hooks**
   - `use-fit-scale.js`、`use-review-data.js`、`use-talent-damage.js`、`use-team-sources.js`。
 
@@ -157,6 +161,7 @@ README 只讲规划器（`planner.html`）；这份文档讲**整个仓库里都
 4. **未知字段必须原样保留。** `repairEntries`/`repairChildren` 用展开运算符，所以 `note` 等新字段不用改 store 就能落盘。
 5. **`DamageCard` 必须自包含。** 它在无 `I18nProvider`、无 props 时靠 `L()` 与中文兜底独立渲染（规划器里很多地方只挂一张卡片）。一旦长出对环境的硬依赖，这些挂载点会最先崩。
 6. **固定尺寸卡片靠 `use-fit-scale` 等比缩放，不改宽度。** `DamageCard` 是固有 `1320x470` 的面板；塞进窄列时用 `transform: scale()` 整体缩小（`use-fit-scale`），改 `max-width` 只会挤压四列内容而不是缩小。
+7. **池化只发生在文件边界，而且解池必须 clone。** `axes-pool.js` 的 `packAxes`/`unpackAxes` 只在导出、导入、localStorage 和导入器输出上跑；`unpackAxes` 交回来的每个 `source`/`buff` 都是**独立副本**。少了这一步，「两行值相同」就变成「两行是同一行」——UI 是就地改 drops 的，改一行会跟着动另一行。同理：池的键是整个对象，值不同就是不同的增益。
 
 ---
 
@@ -182,7 +187,7 @@ localStorage key 一览：`lunaris-axes`（轴，旧 `lunaris-rotation` 会自�
 
 ## 7. 检查脚本（`tests/`，入库）
 
-36 个 `check-*.mjs`。它们原本在 `scratch/`（不入库），现在连同最小 fixture 一起提交了，
+38 个 `check-*.mjs`（24 纯函数 + 14 浏览器）。它们原本在 `scratch/`（不入库），现在连同最小 fixture 一起提交了，
 跑法与各脚本的职责见 [tests/README.md](../tests/README.md)：
 
 ```bash

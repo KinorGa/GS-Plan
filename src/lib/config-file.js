@@ -18,35 +18,67 @@
 //   the reader's own research for no reason.
 //
 // SHAPE
-//   { kind, version, team, axes: [{ id, name, entries }], activeId }
+//   { kind, version, team, pools, axes: [{ id, name, entries }], activeId }
 //
 //   `kind` exists so importing the wrong file says so, instead of failing
 //   somewhere further in with a confusing error.
+//
+// THE REPEATED DESCRIPTORS ARE POOLED
+//   A rotation names the same source on hundreds of rows and the same buff on
+//   thousands, so a row carries `sourceRef` / `buffRefs` /
+//   `summary.sourceLabelRef` -- indices into `pools` -- instead of a copy of
+//   each. That took the imported rotation from 6.27 MB to 1.44 MB, and the file
+//   is meant to be read, so it stays pretty-printed JSON rather than anything
+//   compressed. `axes-pool.js` says what is pooled and why a buff's VALUE is
+//   part of its identity rather than just its key.
+//
+//   NOTHING CHANGES IN MEMORY. The pools are built on the way out and expanded
+//   on the way in, so a row in the app still holds its own `source` and its own
+//   `buffs` array -- which is what keeps two rows editable apart, and what lets
+//   every reader and editor carry on knowing one shape.
 
 import { normaliseTeam } from './team-model';
 import { normaliseAxes } from './axes-store';
+import { packAxes, unpackAxes } from './axes-pool';
 
 export const CONFIG_KIND = 'lunaris-config';
-export const CONFIG_VERSION = 1;
+/**
+ * Bumped when an older reader would MISREAD the file, not merely miss a field.
+ *
+ * 2 -- rows carry refs into `pools` rather than their own `source`/`buffs`, and
+ * a v1 reader discards a drop with no source: it would load the file as an empty
+ * rotation and then, if the user saved, write that emptiness back.
+ */
+export const CONFIG_VERSION = 2;
+
+/**
+ * The whole configuration as a value.
+ *
+ * `pools` sits BEFORE `axes`, so a reader meets the list before the rows that
+ * point into it.
+ */
+export function buildConfigDocument({ team, axes, activeId }) {
+  const packed = packAxes(normaliseAxes({ axes, activeId }));
+  return {
+    kind: CONFIG_KIND,
+    version: CONFIG_VERSION,
+    team: normaliseTeam(team),
+    ...(packed.pools ? { pools: packed.pools } : {}),
+    axes: packed.axes,
+    activeId: packed.activeId,
+  };
+}
 
 /**
  * The whole configuration as a file.
  *
- * Pretty-printed: this is a file a person may open, diff or hand-edit.
+ * Pretty-printed: this is a file a person may open, diff or hand-edit. That is
+ * also why it is neither minified nor compressed -- the pools already took out
+ * the part that was worth taking out, and a few hundred kilobytes of whitespace
+ * is a fair price for a file that can be read.
  */
-export function buildConfigFile({ team, axes, activeId }) {
-  const normalised = normaliseAxes({ axes, activeId });
-  return JSON.stringify(
-    {
-      kind: CONFIG_KIND,
-      version: CONFIG_VERSION,
-      team: normaliseTeam(team),
-      axes: normalised.axes,
-      activeId: normalised.activeId,
-    },
-    null,
-    2
-  );
+export function buildConfigFile(args) {
+  return JSON.stringify(buildConfigDocument(args), null, 2);
 }
 
 /** A filename that sorts and says what it is. */
@@ -103,7 +135,14 @@ export function parseConfigFile(text) {
   }
 
   const team = normaliseTeam(raw.team);
-  const axes = normaliseAxes({ axes: raw.axes, activeId: raw.activeId });
+  // EXPANDED BEFORE NORMALISING: a pooled drop has no `source` until the pools
+  // are applied, and `normaliseAxes` throws away a drop that has none -- so the
+  // order here is the difference between loading a rotation and loading nothing.
+  // A file from before the pools existed has none, and `unpackAxes` passes it
+  // through untouched.
+  const axes = normaliseAxes(
+    unpackAxes({ axes: raw.axes, activeId: raw.activeId, pools: raw.pools })
+  );
 
   return { team, axes: axes.axes, activeId: axes.activeId, teamOnly: false };
 }

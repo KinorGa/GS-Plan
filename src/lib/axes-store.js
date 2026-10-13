@@ -18,6 +18,7 @@
 //   not frozen in whichever language happened to be active when it was created.
 
 import { DAMAGE_TYPES, KEY_SUFFIX } from './elements';
+import { packAxes, unpackAxes } from './axes-pool';
 
 const STORAGE_KEY = 'lunaris-axes';
 
@@ -30,8 +31,16 @@ const STORAGE_KEY = 'lunaris-axes';
  */
 const LEGACY_ROTATION_KEY = 'lunaris-rotation';
 
-/** Bumped only when a change would break an older reader. */
-export const AXES_VERSION = 1;
+/**
+ * Bumped only when a change would break an older reader.
+ *
+ * 2 -- a stored row now keeps its repeated descriptors in pools (see
+ * `axes-pool.js`) and carries `sourceRef`/`buffRefs` instead of an inline
+ * `source`/`buffs`. A reader that does not know about the pools sees a drop with
+ * no source and DISCARDS it, so every row would come back empty. The number is
+ * not decoration: it is what a future reader will check before trusting a file.
+ */
+export const AXES_VERSION = 2;
 
 /** A fresh axis. `name` empty means "unnamed"; the UI renders a fallback. */
 export const blankAxis = (id) => ({ id, name: '', entries: [] });
@@ -68,6 +77,10 @@ export function nextEntryId(entries) {
  *   `{ version, entries }`          the previous single rotation
  *   `[...entries]`                  a bare list, which is what a hand-written
  *                                   file most obviously looks like
+ *
+ * A `pools` key is NOT this function's business -- `unpackAxes` has already put
+ * an inline `source` back on every drop by the time it gets here, and a drop
+ * with no source is discarded below.
  *
  * Always returns at least ONE axis, so the UI never has to render an empty
  * selector, and `activeId` always names a real axis.
@@ -295,7 +308,9 @@ export function repairOverrides(raw) {
 export function loadAxes() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return normaliseAxes(JSON.parse(raw));
+    // UNPACKED BEFORE NORMALISING: the pools are what put a `source` back on a
+    // drop, and normalising a pooled row first would throw every drop away.
+    if (raw) return normaliseAxes(unpackAxes(JSON.parse(raw)));
   } catch {
     return normaliseAxes(null);
   }
@@ -304,7 +319,7 @@ export function loadAxes() {
   try {
     const legacy = localStorage.getItem(LEGACY_ROTATION_KEY);
     if (legacy) {
-      const adopted = normaliseAxes(JSON.parse(legacy));
+      const adopted = normaliseAxes(unpackAxes(JSON.parse(legacy)));
       // Removed so it cannot resurrect entries after a later clear.
       localStorage.removeItem(LEGACY_ROTATION_KEY);
       return adopted;
@@ -316,14 +331,35 @@ export function loadAxes() {
   return normaliseAxes(null);
 }
 
-/** Persist the axes. */
+/**
+ * Persist the axes.
+ *
+ * PACKED, for the same reason the exported file is: the repeated descriptors
+ * are the bulk of the document, and the quota this has to fit in is about 5 MB
+ * -- which a single imported rotation used to reach on its own.
+ */
 export function saveAxes(state) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(normaliseAxes(state)));
-  } catch {
-    // Quota or private mode: the axes still work for this session.
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(packAxes(normaliseAxes(state))));
+  } catch (err) {
+    warnSaveFailed(err);
   }
   return state;
+}
+
+/**
+ * Say so when a write is lost.
+ *
+ * ONCE per session, and to the console. This runs inside a `useEffect` on every
+ * edit, so a dialog would re-open on the next keystroke and be worse than the
+ * problem it reports -- but swallowing it entirely (which is what this did) left
+ * the page rendering state that a refresh would silently revert.
+ */
+let warnedSaveFailed = false;
+function warnSaveFailed(err) {
+  if (warnedSaveFailed) return;
+  warnedSaveFailed = true;
+  console.error('配置没能写入 localStorage（多半是配额已满），本次改动刷新后会丢失。请导出 JSON 备份。', err);
 }
 
 /**
@@ -331,13 +367,14 @@ export function saveAxes(state) {
  *
  * Unlike `saveAxes` this does NOT normalise, because the caller has already
  * parsed a document through `parseConfigFile` -- and normalising twice would
- * renumber ids the file deliberately specified.
+ * renumber ids the file deliberately specified. `packAxes` is safe to run here:
+ * it rewrites descriptors only, and has no opinion about ids.
  */
 export function replaceAxes(state) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch {
-    // As above.
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(packAxes(state)));
+  } catch (err) {
+    warnSaveFailed(err);
   }
   return state;
 }

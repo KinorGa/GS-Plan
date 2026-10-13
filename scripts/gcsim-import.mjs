@@ -87,6 +87,9 @@ const { buildSources } = await import('../src/char-sources.js');
 const { SLOT_KEYS, SUB_COUNT, blankPiece, mainStatValue } = await import('../src/lib/artifact-model.js');
 const { buildUnitSources } = await import('../src/lib/buff-sources.js');
 const { damageTypeSuffix } = await import('../src/lib/elements.js');
+// The OUT writer is the app's own (see `buildConfigFile`), so the file this
+// script produces and the file the export button produces cannot drift apart.
+const { CONFIG_KIND, CONFIG_VERSION, buildConfigFile } = await import('../src/lib/config-file.js');
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const arg = (name, fallback) => {
@@ -615,8 +618,8 @@ export function importGcsim({
   };
 
   const doc = {
-    kind: 'lunaris-config',
-    version: 1,
+    kind: CONFIG_KIND,
+    version: CONFIG_VERSION,
     team: teamOut,
     axes: [{ id: 'gcsim', name: 'gcsim 导入', entries }],
     activeId: 'gcsim',
@@ -1081,7 +1084,11 @@ function main() {
   });
 
   fs.mkdirSync(path.dirname(outFile), { recursive: true });
-  fs.writeFileSync(outFile, JSON.stringify(doc, null, 2));
+  // WRITTEN THROUGH THE APP'S OWN WRITER, so the file this produces is exactly
+  // the file the export button produces: pooled, pretty-printed, and with the
+  // kind/version the reader expects rather than a copy of them kept in step by
+  // hand.
+  fs.writeFileSync(outFile, buildConfigFile({ team: doc.team, axes: doc.axes, activeId: doc.activeId }));
   if (reportFile) {
     fs.mkdirSync(path.dirname(reportFile), { recursive: true });
     fs.writeFileSync(reportFile, JSON.stringify(report, null, 2));
