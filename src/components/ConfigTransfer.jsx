@@ -31,6 +31,18 @@ import { useI18n } from '../i18n';
 import { useTeam } from '../lib/team-context';
 import { buildConfigFile, configFilename, describeImport, parseConfigFile } from '../lib/config-file';
 import AppDialog from './AppDialog';
+/**
+ * The two kinds of file 导入 accepts.
+ *
+ * They are not interchangeable, which is why the choice is visible rather than a
+ * hidden preference: a configuration is JSON, and a gcsim sample is usually a
+ * `.gz` that is not JSON at all until it is decompressed. One shared `accept`
+ * would either hide the file the user is holding or offer one that cannot work.
+ */
+const IMPORT_MODES = [
+  { id: 'json', label: { chs: 'JSON', en: 'JSON' }, accept: 'application/json,.json' },
+  { id: 'gcsim', label: { chs: 'gcsim', en: 'gcsim' }, accept: '.gz,.json' },
+];
 
 /**
  * @param {object}   axes           The live axes state: `{ version, axes, activeId }`.
@@ -38,7 +50,7 @@ import AppDialog from './AppDialog';
  * @param {Function} onClearAxes    Called to reset the axes to a single blank one.
  */
 export default function ConfigTransfer({ axes, onReplaceAxes, onClearAxes }) {
-  const { L } = useI18n();
+  const { L, lang } = useI18n();
   const { units, replaceTeam } = useTeam();
   const fileRef = useRef(null);
   const [status, setStatus] = useState(null); // { kind: 'ok' | 'error', text }
@@ -46,7 +58,18 @@ export default function ConfigTransfer({ axes, onReplaceAxes, onClearAxes }) {
   // dialog can describe it and confirming cannot fail after the fact.
   const [pendingImport, setPendingImport] = useState(null);
   const [clearing, setClearing] = useState(false);
-
+  /**
+   * Which kind of file 导入 is about to ask for.
+   *
+   * Kept next to the button rather than buried in a setting, because the mode
+   * decides what the picker will even show.
+   */
+  const [mode, setMode] = useState('json');
+  /**
+   * A gcsim import is not instant: it decompresses the run and loads the
+   * dataset. Without this the button looks dead for the second it takes.
+   */
+  const [busy, setBusy] = useState(false);
   const axisCount = axes?.axes?.length || 0;
   const entryCount = (axes?.axes || []).reduce((n, a) => n + (a.entries?.length || 0), 0);
 
@@ -76,6 +99,30 @@ export default function ConfigTransfer({ axes, onReplaceAxes, onClearAxes }) {
     });
   };
 
+  /**
+   * A gcsim sample -> the same `parsed` shape `parseConfigFile` returns, plus the
+   * importer's own report.
+   *
+   * THE IMPORTER IS LOADED ON DEMAND. It is the whole gcsim half of the
+   * import -- a thousand lines plus the mapping table -- and someone who never
+   * imports a simulation should not pay for it on first paint.
+   *
+   * `report` rides along on the parsed object so the confirmation dialog can say
+   * what the import LOST before anything is replaced: an unmapped hit is a row
+   * the rotation will not have, and that is not something to discover later.
+   */
+  const parseGcsim = async (file) => {
+    const { importGcsimSample } = await import('../lib/gcsim-sample');
+    const { doc, report } = await importGcsimSample(await file.arrayBuffer(), lang);
+    return {
+      team: doc.team,
+      axes: doc.axes,
+      activeId: doc.activeId,
+      teamOnly: false,
+      gcsim: report,
+    };
+  };
+
   const onFile = async (e) => {
     const file = e.target.files?.[0];
     // Reset the input's value so choosing the SAME file twice still fires a
@@ -84,15 +131,21 @@ export default function ConfigTransfer({ axes, onReplaceAxes, onClearAxes }) {
     if (!file) return;
 
     let parsed;
+    setBusy(true);
     try {
-      parsed = parseConfigFile(await file.text());
+      parsed = mode === 'gcsim'
+        ? await parseGcsim(file)
+        : parseConfigFile(await file.text());
     } catch (err) {
       setStatus({ kind: 'error', text: err.message });
       return;
+    } finally {
+      setBusy(false);
     }
 
     // Parsed and validated FIRST, so this dialog can state exactly what will be
-    // replaced and confirming cannot then fail halfway.
+    // replaced and confirming cannot then fail halfway. A gcsim import is the
+    // same promise: everything that can fail has already run.
     setPendingImport(parsed);
   };
 
@@ -129,7 +182,25 @@ export default function ConfigTransfer({ axes, onReplaceAxes, onClearAxes }) {
    * Named rather than `d` because it is referenced inside JSX.
    */
   const pendingDetails = pendingImport ? describeImport(pendingImport) : null;
-
+  const modeSpec = IMPORT_MODES.find((m) => m.id === mode) || IMPORT_MODES[0];
+  /**
+   * The importer's report, as far as the dialog is concerned.
+   *
+   * NOT its whole table -- the CLI prints that. What has to be true BEFORE the
+   * user confirms is whether anything was lost, so this is the counts and the
+   * names of the hits that were not written, plus the buff notes that mean the
+   * mapping table is missing an entry. `buff-inactive` is deliberately excluded:
+   * "the condition was not met, so this hit did not get the card" is the log
+   * being read correctly, not a problem.
+   */
+  const gcsim = pendingImport?.gcsim || null;
+  const unmappedNames = gcsim
+    ? [...new Set(gcsim.byAbility.filter((r) => !r.mapped && !r.ignored).map((r) => r.ability))]
+    : [];
+  const PROBLEM_NOTES = new Set(['buff-status-unknown', 'buff-line-unknown', 'buff-source-missing', 'buff-value-drift']);
+  const problemCount = gcsim
+    ? (gcsim.buffs?.notes || []).filter((n) => PROBLEM_NOTES.has(n.kind)).length
+    : 0;
   return (
     <div data-config-transfer className="flex flex-wrap items-center gap-2 border-t border-white/5 pt-3">
       <span className="text-[10px] uppercase tracking-wider text-white/25">
@@ -140,10 +211,27 @@ export default function ConfigTransfer({ axes, onReplaceAxes, onClearAxes }) {
         {L({ chs: '导出 JSON', en: 'Export JSON' })}
       </TransferButton>
 
-      <TransferButton onClick={() => fileRef.current?.click()} data-import>
-        {L({ chs: '导入 JSON', en: 'Import JSON' })}
+      <TransferButton onClick={() => fileRef.current?.click()} disabled={busy} data-import>
+        {busy ? L({ chs: '解析中…', en: 'Reading…' }) : L({ chs: '导入', en: 'Import' })}
       </TransferButton>
 
+      {/* WHICH KIND OF FILE, beside the button it changes. `data-selected` is a
+          string rather than a boolean so a probe can read the state off the DOM
+          the way it reads every other toggle in this app. */}
+      <div className="flex overflow-hidden rounded-lg border border-white/10 text-[11px]" data-import-mode>
+        {IMPORT_MODES.map((m) => (
+          <button
+            key={m.id}
+            type="button"
+            onClick={() => setMode(m.id)}
+            data-import-mode-option={m.id}
+            data-selected={mode === m.id ? 'true' : 'false'}
+            className={'px-2.5 py-1 transition-colors ' + (mode === m.id ? 'bg-white/10 text-white' : 'text-white/35 hover:text-white/70')}
+          >
+            {L(m.label)}
+          </button>
+        ))}
+      </div>
       <TransferButton onClick={clearAll} disabled={empty} tone="danger" data-clear>
         {L({ chs: '清空全部', en: 'Clear all' })}
       </TransferButton>
@@ -159,7 +247,7 @@ export default function ConfigTransfer({ axes, onReplaceAxes, onClearAxes }) {
       <input
         ref={fileRef}
         type="file"
-        accept="application/json,.json"
+        accept={modeSpec.accept}
         onChange={onFile}
         className="hidden"
         aria-hidden
@@ -220,6 +308,37 @@ export default function ConfigTransfer({ axes, onReplaceAxes, onClearAxes }) {
                   })}
               </span>
             </div>
+            {/* WHAT THE IMPORT LOST, before anything is replaced. Only the gcsim
+                path has a report: a configuration says what it holds by being
+                read, but a simulation log has to be told apart from the rows
+                that were written out of it. */}
+            {gcsim && (
+              <div className="flex flex-col gap-1 border-t border-white/5 pt-2">
+                <span className="text-[10px] uppercase tracking-wider text-white/30">
+                  {L({ chs: 'gcsim 导入报告', en: 'gcsim import report' })}
+                </span>
+                <span className="text-white/45" data-gcsim-summary>
+                  {L({
+                    chs: 'damage 事件 ' + gcsim.damageEvents + ' · 写入 ' + gcsim.entries + ' 条目 · 映射 ' + gcsim.mappedHits + ' 击 · 忽略反应 ' + gcsim.ignoredHits + ' · 未映射 ' + gcsim.unmappedHits,
+                    en: gcsim.damageEvents + ' damage events -> ' + gcsim.entries + ' entries · ' + gcsim.mappedHits + ' mapped · ' + gcsim.ignoredHits + ' reactions ignored · ' + gcsim.unmappedHits + ' unmapped',
+                  })}
+                </span>
+                {unmappedNames.length > 0 && (
+                  <span className="text-amber-300/80" data-gcsim-unmapped>
+                    {L({ chs: '未映射的命中不会写进轴：', en: 'Unmapped hits are not written: ' })}
+                    {unmappedNames.join('、')}
+                  </span>
+                )}
+                {problemCount > 0 && (
+                  <span className="text-amber-300/80" data-gcsim-notes>
+                    {L({
+                      chs: '增益表里有 ' + problemCount + ' 处对不上（状态未收录 / 来源缺失），这些卡没挂上。',
+                      en: problemCount + ' buff notes did not resolve (unknown status or missing source); those cards were not attached.',
+                    })}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         )}
         confirmLabel={L({ chs: '导入', en: 'Import' })}

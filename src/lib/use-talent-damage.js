@@ -33,6 +33,18 @@ function load() {
   return inflight;
 }
 
+/**
+ * The table, as a promise -- for a caller that is NOT a component.
+ *
+ * The hook below is the right shape for a card: a fetch started during render
+ * cannot re-render anything, so it lands in state. The gcsim importer is an
+ * ordinary async function with nowhere to put state, and it must not start a
+ * SECOND request for the same 790 KB file, so it awaits this instead.
+ */
+export function loadTalentDamage() {
+  return load();
+}
+
 export function useTalentDamage() {
   const [table, setTable] = useState(cached);
 

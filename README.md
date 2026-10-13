@@ -206,15 +206,21 @@ buff 数组；拖拽时 `dataTransfer` 里放的是整张卡 + 其 buffs 的 JSO
 
 配队 + 全部伤害轴导出为 JSON、导入还原，或一键清空。旧存档会被自动迁移。
 
+「导入」旁边的模式选择决定这次读哪种文件：`JSON` 是本项目的配置，`gcsim` 是模拟器的导出。
+
 ### 从 gcsim 导入轴
 
-[gcsim](https://github.com/genshinsim/gcsim) 跑出来的每一击都可以直接导成一条轴：
+[gcsim](https://github.com/genshinsim/gcsim) 跑出来的每一击都可以直接导成一条轴，两条路：
+
+- **在页面里**：模式切到 `gcsim`，选 `serve_sample.json.gz`（zlib / gzip / 裸 JSON 都认）。确认框会先报
+  「damage 事件 / 写入条目 / 映射击数 / 未映射击数」，确认后整队 + 全部轴一起替换。
+- **用命令行**（产物再切回 `JSON` 模式导入）：
 
 ```bash
 npm run gcsim:import
 ```
 
-产物 `data/gcsim-config.json` 用规划器的「导入」载入。每行带一条 note 记录 gcsim 的单击/合计，
+**两条路跑的是同一个导入函数**，产出的文件是同一份。每行带一条 note 记录 gcsim 的单击/合计，
 可直接和旁边的面板数对照。面板也一起重建：圣遗物词条取样本的 `add stats` 聚合值，
 **增益卡逐条照抄日志**——每条只挂它自己那几击里真正生效的来源，数值也取那一刻的数。
 **倍率也取 gcsim 自己的数**（`scaling`）：多段招式按段拆成父子条目，展开一段不会把整行塌回去。

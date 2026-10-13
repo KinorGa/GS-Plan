@@ -17,6 +17,12 @@ node scripts/gcsim-import.mjs --help    # 见脚本头部：--sample / --out / -
 存一份，行里留索引——这份 400 行的样本因此从 6.27 MB 缩到 1.44 MB，仍然是给人看的 pretty JSON。
 规则见 [DEV.md](./DEV.md) 的 `axes-pool.js`。
 
+**不经过命令行也行。** 规划器右上角「导入」旁边多了模式选择，切到 `gcsim` 后直接选
+`serve_sample.json.gz`，页面里解压、加载数据集、跑导入，确认框会先报「映射了多少击 / 有多少没映射」。
+页面跑的是**同一个导入函数**（`src/lib/gcsim-import.js`，`scripts/gcsim-import.mjs` 只是它的命令行薄壳），
+需要的数据集也全是规划器本来就加载并缓存的那几份（目录、圣遗物套装、角色详情、天赋伤害表），
+只多一次 5 KB 的 `gcsim-abilities.json`。所以两条路产出的文件是同一份——可以逐行对拍。
+
 > 导出文件本身的字段形状（顶层结构、`damage` / `calc` 事件语法、`pre_damage_mods` 这类嵌套状态）
 > 记在 [GCSIM-SAMPLE.md](./GCSIM-SAMPLE.md)，改导入器前先看那份，不用再重新反推。
 
@@ -103,6 +109,13 @@ gcsim 用自己的内部 ability 名（`Azure Devour`、`Sturm und Drang Normal 
 
 这份样本 617 击的结果：**515 落到行上**，**102 是扩散反应**（`swirl-pyro`，由元素附着触发、
 不属于任何角色的天赋行，只能忽略）。**没有未映射的命中。**
+
+## 代码在哪
+
+- `src/lib/gcsim-import.js` — **导入器本体**，纯函数：日志、对照表、目录、角色详情、天赋表全部是参数。
+  两种调用方（命令行 / 页面）共用它，所以不存在第二份会漂移的实现；`tests/check-gcsim-import.mjs` 也用同一份。
+- `src/lib/gcsim-sample.js` — 页面侧接线：认 magic bytes 解压 gz/zlib、拉数据集、调上面的函数。
+- `scripts/gcsim-import.mjs` — 命令行侧接线：读盘、写盘，其余都在上面那个模块里。
 
 ## 维护
 
