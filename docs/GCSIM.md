@@ -173,9 +173,17 @@ node scripts/gcsim-map.mjs --write    # 写回 gcsim-abilities.json
 
 - **新角色**：gcsim 名推不出本地 id 时脚本会直接报错，并说清在 `characters` 里补哪一条；
 - **新 ability**：会出现在「未映射」里，照 `abilities` 的格式补一条即可。
-  注意一个 ability 可能出现在**多个角色**的日志里——尼可 C1 的协同攻击
-  `Arcane Projection: Unity` 出现在全队四人的日志里（各自有自己的 calc 与倍率），
-  补映射时**每个角色都要补**，只补尼可自己会漏掉 18 击；
+  但 `abilities` 是**生成**的，手塞的那条下一次 `--write` 就没了——改完要重跑
+  `node scripts/gcsim-map.mjs --write`，或者走下面的 `teamAbilities`；
+- **出现在全队日志里的协同攻击**：走 `teamAbilities`，**不要**按角色往 `abilities` 里塞。
+  尼可 C1 的协同攻击 `Arcane Projection: Unity` 由**当前场上角色**打出——用他的元素、
+  他的攻击力，并「视为由该角色造成的伤害」，所以日志里它挂在四个人各自的 `char_index`
+  下，而它的名字对不上任何人的天赋行。表里写 `source: "flatdmg"`，导入器按**这一击
+  自己的元素**解析成对应元素/物理的「附伤」行（`src/char-sources.js` 的
+  `flatDamageSources`：7 元素 + 物理，每个角色都自带）。
+  **以前**这条是按角色塞进 `abilities`、指到各自的元素爆发上的：法尔伽那一轮从没放过
+  爆发，统计数据里却凭空多出 7.1% 的「元素爆发·我即朔风」，就是 14 击协同攻击被挂错
+  了行；
 - **新的附加伤害 / 无视防御来源**：报告会打「拆不成 calc 表里的来源」。查清它是谁的命座/
   天赋、量怎么算，在对照表的 `calc` 段补一条规则即可（三种形状：`ability` 独占、
   `observedBy` 观察、`of`+`factor` 折算；格式见该段自带的 `_comment`）；

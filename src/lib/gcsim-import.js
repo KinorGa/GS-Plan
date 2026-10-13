@@ -61,7 +61,7 @@
 // detail files; `findStage` matches `stages[].chs` and nothing else. That is not
 // a preference, it is how the table is written.
 
-import { buildSources } from '../char-sources';
+import { buildSources, flatSourceKey, FLAT_SOURCE_PREFIX } from '../char-sources';
 import { SLOT_KEYS, SUB_COUNT, blankPiece, mainStatValue } from './artifact-model';
 import { buildUnitSources } from './buff-sources';
 import { damageTypeSuffix } from './elements';
@@ -132,6 +132,22 @@ export function importGcsim({
   const buffTable = mapping.buffs || {};
   const extraSources = mapping.extraSources || {};
   const calcRules = mapping.calc || {};
+
+  /**
+   * Abilities that belong to the WHOLE TEAM rather than to one character.
+   *
+   * 尼可's C1 coordinated attack (奥迹造影·合一) fires under whoever is ON FIELD,
+   * so gcsim logs it with that character's index and their own calc -- and its
+   * name answers no row on anyone's talent table. `abilities` is per character,
+   * so one entry per character would have to be hand-written for every character
+   * in the roster; this table is looked up by ability name alone and resolves to
+   * the 附伤 row OF THE HIT'S OWN DAMAGE TYPE, which is what the C1 deals
+   * ("依据该角色的元素类型，造成对应元素范围伤害").
+   *
+   * The per-character table still wins where it has an entry -- 尼可's own hits
+   * are her C1 row, not a generic 附伤 one.
+   */
+  const teamAbilities = mapping.teamAbilities || {};
 
   // gcsim char -> local id, once, up front: an unresolvable character makes the
   // whole run meaningless, so it throws rather than dropping every hit.
@@ -454,12 +470,18 @@ export function importGcsim({
     } = cast;
 
     const cd = details[ci];
-    const mapped = abilities[idFor[ci].id]?.[ability];
+    const mapped = abilities[idFor[ci].id]?.[ability] || teamAbilities[ability] || null;
     const isIgnored = Boolean(ignored[ability]) || REACTION.test(ability);
     const report = note(cd.name, ability, hits, Boolean(mapped), isIgnored);
     if (!mapped) return;
 
-    const src = (sources[ci] || []).find((s) => s.key === mapped.source);
+    // A TEAM ability (see `teamAbilities`) names the 附伤 row of the hit's OWN
+    // damage type: the log states that type, and the character's own element is
+    // the fallback for a cast whose first hit carried none.
+    const sourceKey = mapped.source === FLAT_SOURCE_PREFIX
+      ? flatSourceKey(ele || cd.element || null)
+      : mapped.source;
+    const src = (sources[ci] || []).find((s) => s.key === sourceKey);
     const stage = findStage(src, mapped.stage);
     if (!src || !stage) {
       // A mapping whose stage name no longer exists is a table that has drifted;
@@ -554,8 +576,8 @@ export function importGcsim({
         ...(scaling ? { scaling } : {}),
         statOverrides: { ...enemyOverrides },
         critMode: critAll ? 'crit' : critNone ? 'never' : 'avg',
-        picked: { sourceKey: mapped.source, stageIndex },
-        summary: { sourceKey: mapped.source, sourceLabel },
+        picked: { sourceKey, stageIndex },
+        summary: { sourceKey, sourceLabel },
         note: noteText(hits, total, critAll, critNone),
       });
       return;
@@ -593,9 +615,9 @@ export function importGcsim({
       drops: [],
       statOverrides: { ...enemyOverrides },
       critMode: critAll ? 'crit' : critNone ? 'never' : 'avg',
-      picked: { sourceKey: mapped.source, stageIndex },
+      picked: { sourceKey, stageIndex },
       summary: {
-        sourceKey: mapped.source,
+        sourceKey,
         sourceLabel,
         parts,
         partCount: groups.length,

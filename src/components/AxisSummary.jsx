@@ -77,6 +77,10 @@ export default function AxisSummary({ entries, axis, team, L }) {
       icon: srcLabel?.icon || null,
       name: srcLabel?.chs || null,
       nameEn: srcLabel?.en || null,
+      // The universal 附伤 rows carry no icon FILE: their mark is the damage
+      // type's glyph, which the legend draws itself. `iconKind` is what says so.
+      iconKind: srcLabel?.iconKind || null,
+      element: srcLabel?.element || null,
     };
 
     if (e.kind === 'segment') {
@@ -243,6 +247,7 @@ export default function AxisSummary({ entries, axis, team, L }) {
           (k) => srcMap.get(k)?.info?.name || k,
           (k) => {
             const info = srcMap.get(k)?.info;
+            if (info?.iconKind === 'element') return <ElementGlyph element={info.element} size={16} />;
             if (!info?.icon) return null;
             return (
               <img

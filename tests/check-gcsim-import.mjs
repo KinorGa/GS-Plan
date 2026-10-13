@@ -421,5 +421,42 @@ eq(burst.summary.parts.map((p) => p.mult).join(','), '1.5,3,4.5', "each part kee
 const wovenParts = computeAxis(woven.doc.axes[0].entries, crew, catalogue, talentDamage).byId.get(burst.id).parts;
 eq(wovenParts.map((p) => p.partIndex).join(','), '0,1,2', 'a part keeps its own index past the table\'s part count');
 
+/* --- 8. a coordinated attack lands on the 附伤 row, not on a talent --------- */
+console.log('\n8. a team ability lands on the 附伤 row of ITS OWN damage type');
+// 尼可 C1's coordinated attack (奥迹造影·合一 / `Arcane Projection: Unity`) fires
+// under whoever is ON FIELD, so gcsim files it under THAT character, with their
+// own calc, under an ability name that answers no row of their talent table.
+// Mapping it to a talent row -- which the table used to do, per character, by
+// hand -- put 14 hits of an Anemo coordinated attack on 法尔伽's 元素爆发, a talent
+// the rotation never used. It now lands on the universal 附伤 row of the hit's own
+// element, which every character carries for exactly this (`flatDamageSources`).
+const coord = {
+  ...sample,
+  logs: [
+    { event: 'damage', char_index: 0, frame: 60, logs: { abil: 'Arcane Projection: Unity', ele: 'anemo', crit: true, damage: 270792.5 } },
+    { event: 'calc', char_index: 0, frame: 60, logs: { abil: 'Arcane Projection: Unity', talent: 7.1604 } },
+  ],
+};
+const coordRun = importGcsim({ sample: coord, mapping, catalogues, charData, talentDamage, setBonuses });
+const flatRows = coordRun.doc.axes[0].entries;
+const flat = flatRows[0];
+eq(flatRows.length, 1, 'the coordinated attack is ONE row');
+eq(flat.summary.sourceKey, 'flatdmg-anemo', 'it is the Anemo 附伤 row');
+eq(flat.summary.sourceLabel.chs, '附伤·风', 'labelled 附伤, not 元素爆发');
+eq(flat.summary.sourceLabel.stages[0].chs, '附伤', 'the source carries one 附伤 stage');
+eq(flat.scaling?.mult, 7.1604, "the multiplier comes from the run's own calc");
+eq(flat.element, 'Anemo', 'the hit keeps the element the log gave it');
+eq(flat.charId, '10000128', 'the damage still belongs to the character who dealt it');
+eq(
+  flatRows.some((e) => e.summary.sourceKey === 'elementalburst'),
+  false,
+  'nothing lands on 元素爆发'
+);
+// And the row computes: the 附伤 source is on the character's own list, so the
+// axis can price it rather than falling back to `sources[0]`.
+const coordParts = computeAxis(flatRows, crew, catalogue, talentDamage).byId.get(flat.id).parts;
+eq(coordParts.length, 1, 'the axis computes its single part');
+eq(coordParts[0].element, 'Anemo', 'and prices it as Anemo');
+
 console.log(bad ? `\n${bad} PROBLEMS` : '\nall checks passed');
 process.exit(bad ? 1 : 0);

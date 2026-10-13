@@ -426,6 +426,10 @@ if (WRITE) {
       "",
       "生成器不猜：配不上的 ability 宁可不写（导入时会出现在报告里），也不写一个",
       "像是对的错行。旅行者按元素分文件，暂不生成。",
+      "",
+      "teamAbilities 是手工维护的：那些出现在全队日志里、又不属于任何角色天赋行的",
+      "协同攻击（尼可 C1 的奥迹造影·合一）。它的 source 写 `flatdmg`，导入时按这一击",
+      "自己的元素解析成对应元素/物理的附伤行。生成器只把它原样带过去。",
     ],
     characters: { ...charOv },
     weapons: { ...weaponOv },
@@ -437,6 +441,9 @@ if (WRITE) {
     calc: current.calc,
     extraSources: current.extraSources,
     ignored: current.ignored,
+    // Likewise curated: a coordinated attack belongs to no single character's
+    // talent table, so no amount of reading the Go source places it.
+    teamAbilities: current.teamAbilities,
   };
   fs.writeFileSync(OUT, JSON.stringify(merged, null, 2) + '\n');
   console.log(`wrote ${OUT}`);

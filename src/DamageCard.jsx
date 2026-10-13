@@ -111,6 +111,10 @@ const SOURCE_LABEL = {
   burst: { chs: '元素爆发', en: 'Elemental Burst' },
   constellation: { chs: '命之座', en: 'Constellation' },
   passive: { chs: '固有天赋', en: 'Passive Talent' },
+  // The universal 附伤 rows -- see `char-sources.flatDamageSources`. One caption
+  // for all of them: the NAME already carries the damage type, and the icon is
+  // that type's glyph.
+  flat: { chs: '附伤', en: 'Additional DMG' },
 };
 
 // Reactions.
@@ -876,7 +880,7 @@ export default function DamageCard({
 
       <div className="flex items-start gap-3">
         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] p-1.5">
-          <img src={talentIconImg(source.icon)} alt="" className="h-full w-full object-contain" />
+          <SourceGlyph source={source} boxSize={34} imgClassName="h-full w-full object-contain" />
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-[10px] uppercase tracking-wider text-white/40">{L(SOURCE_LABEL[source.kind])}</p>
@@ -947,7 +951,7 @@ export default function DamageCard({
                   s.key === sourceKey ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/5'
                 }`}
               >
-                <img src={talentIconImg(s.icon)} alt="" className="h-5 w-5 shrink-0 object-contain" />
+                <SourceGlyph source={s} boxSize={20} imgClassName="h-5 w-5 shrink-0 object-contain" />
                 <span className="min-w-0 flex-1 truncate">{L(s)}</span>
                 <span className="shrink-0 text-[10px] text-white/30">{L(SOURCE_LABEL[s.kind])}</span>
               </button>
@@ -1316,6 +1320,32 @@ function ReactionOption({ reaction: r, active, hitElement, onPick, L }) {
 // as the character card: the original icon is pushed out of its clipping box
 // by a flat coloured copy of itself.
 //
+/**
+ * A source's mark in the picker and in the card's header.
+ *
+ * MOST sources hold a talent/skill file name and are drawn as an `img`. The
+ * universal 附伤 rows hold NO file name -- their mark is the DAMAGE TYPE's glyph,
+ * which is stencilled and tinted by `ElementIcon` rather than loaded by name. So
+ * `iconKind's `'element'` selects that path, and everything else keeps the `<img>`
+ * it always had.
+ *
+ * `boxSize` is the glyph's own edge, `imgClassName` the sizing the `<img>` branch
+ * has always used -- the two call sites want different ones, and neither should
+ * have to be re-derived here.
+ */
+function SourceGlyph({ source, boxSize, imgClassName }) {
+  if (source?.iconKind === 'element') {
+    // `ElementIcon` reads the capitalised spelling, or the literal `physical`.
+    return (
+      <ElementIcon
+        element={source.element === 'Physical' ? 'physical' : source.element}
+        size={boxSize}
+      />
+    );
+  }
+  return <img src={talentIconImg(source?.icon)} alt="" className={imgClassName} />;
+}
+
 // Takes the element in `ELEMENT_FOR_ICON`'s spelling -- capitalised, or the
 // literal `'physical'`. Callers hold it in both spellings, so this capitalises
 // rather than trusting the argument: a lowercase `'cryo'` looked up here as-is

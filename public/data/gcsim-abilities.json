@@ -14,7 +14,11 @@
     "别名（英文名本身走代码推断），weapons/sets 目前都能推断所以是空的。",
     "",
     "生成器不猜：配不上的 ability 宁可不写（导入时会出现在报告里），也不写一个",
-    "像是对的错行。旅行者按元素分文件，暂不生成。"
+    "像是对的错行。旅行者按元素分文件，暂不生成。",
+    "",
+    "teamAbilities 是手工维护的：那些出现在全队日志里、又不属于任何角色天赋行的",
+    "协同攻击（尼可 C1 的奥迹造影·合一）。它的 source 写 `flatdmg`，导入时按这一击",
+    "自己的元素解析成对应元素/物理的附伤行。生成器只把它原样带过去。"
   ],
   "characters": {
     "aratakitheoneandoniitto": "10000057",
@@ -303,6 +307,10 @@
       "Lightning Fang": {
         "source": "elementalburst",
         "stage": "爆发伤害"
+      },
+      "Lupus Fulguris": {
+        "source": "const6",
+        "stage": "攻击力倍率伤害"
       },
       "Low Plunge": {
         "source": "normalattack",
@@ -1712,6 +1720,10 @@
       }
     },
     "10000058": {
+      "Yae A1": {
+        "source": "p1",
+        "stage": "攻击力倍率伤害"
+      },
       "Normal 0": {
         "source": "normalattack",
         "stage": "一段伤害"
@@ -1865,6 +1877,10 @@
       "Cat Grass Cardamom Explosion": {
         "source": "elementalburst",
         "stage": "猫草豆蔻爆炸伤害"
+      },
+      "Steed of Skanda": {
+        "source": "const4",
+        "stage": "攻击力倍率伤害"
       },
       "Tail-Flicking Flying Kick": {
         "source": "elementalskill",
@@ -4029,6 +4045,14 @@
       "Far to Fall (C1)": {
         "source": "const1",
         "stage": "攻击力倍率伤害"
+      },
+      "Havoc: Sever (Burst)": {
+        "source": "const6",
+        "stage": "攻击力倍率伤害"
+      },
+      "Havoc: Sever (Normal)": {
+        "source": "const6",
+        "stage": "攻击力倍率伤害"
       }
     },
     "10000115": {
@@ -4241,10 +4265,6 @@
       "Denial of Darkness": {
         "source": "elementalskill",
         "stage": "转变·黑度之否伤害"
-      },
-      "Arcane Projection: Unity": {
-        "source": "elementalburst",
-        "stage": "白焰之龙伤害"
       }
     },
     "10000124": {
@@ -4451,10 +4471,6 @@
       "Four Winds' Ascension": {
         "source": "elementalskill",
         "stage": "四风将起伤害"
-      },
-      "Arcane Projection: Unity": {
-        "source": "elementalburst",
-        "stage": "技能第一段伤害"
       }
     },
     "10000131": {
@@ -4482,13 +4498,13 @@
         "source": "normalattack",
         "stage": "重击伤害"
       },
-      "Revelation: Uncreated Light": {
-        "source": "elementalskill",
-        "stage": "技能伤害"
-      },
       "Arcane Projection: Unity": {
         "source": "const1",
         "stage": "攻击力倍率伤害"
+      },
+      "Revelation: Uncreated Light": {
+        "source": "elementalskill",
+        "stage": "技能伤害"
       }
     },
     "10000132": {
@@ -4531,10 +4547,6 @@
       "Clang Clang! Witch-tribution Comes! DMG": {
         "source": "elementalskill",
         "stage": "咚锵锵·裁魔之惩伤害"
-      },
-      "Arcane Projection: Unity": {
-        "source": "elementalburst",
-        "stage": "技能伤害"
       }
     },
     "10000150": {
@@ -4681,5 +4693,17 @@
   },
   "ignored": {
     "swirl-pyro": "扩散反应：由元素附着触发，不属于任何角色的天赋行，无法落到单个来源上"
+  },
+  "teamAbilities": {
+    "_comment": [
+      "手改的表（生成器只原样带过去）：出现在全队日志里、又不属于任何角色天赋行的协同攻击。",
+      "source 写 `flatdmg`，导入器按这一击自己的元素解析成对应元素/物理的「附伤」行",
+      "（见 src/char-sources.js 的 flatDamageSources）。",
+      "角色自己有一条时（尼可的 C1）以 abilities 里的为准，这里只是兜底。"
+    ],
+    "Arcane Projection: Unity": {
+      "source": "flatdmg",
+      "stage": "附伤"
+    }
   }
 }

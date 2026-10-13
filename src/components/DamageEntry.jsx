@@ -19,7 +19,7 @@ import DamageCard, { defaultStats, reactionByKey } from '../DamageCard';
 import BuffCard, { buffKeyOf } from './BuffCard';
 import { useI18n } from '../i18n';
 import { elementOf } from '../game';
-import { buildSources, CHAR_FILE } from '../char-sources';
+import { buildSources, CHAR_FILE, FLAT_SOURCE_PREFIX } from '../char-sources';
 import { useTalentDamage } from '../lib/use-talent-damage'
 import { useFitScale } from '../lib/use-fit-scale';
 import { computeDamage } from '../lib/damage';
@@ -1219,8 +1219,15 @@ function DamageEntry({
 // char-sources.js keys sources as `normalattack` / `elementalskill` /
 // `elementalburst`, so those are matched first; the `kind` values are accepted
 // too, since the standalone damage card labels its own sources that way.
-export const SOURCE_KIND_LABEL = (key, L) =>
-  ({
+export const SOURCE_KIND_LABEL = (key, L) => {
+  // The universal 附伤 rows are keyed BY DAMAGE TYPE (`flatdmg-anemo`, ...), so a
+  // hit that belongs to no talent of its own still reads as 附伤 rather than
+  // falling through to the generic 攻击. Matched on the PREFIX, so a new damage
+  // type needs no second edit here.
+  if (typeof key === 'string' && key.startsWith(FLAT_SOURCE_PREFIX)) {
+    return L({ chs: '附伤', en: 'Additional DMG' });
+  }
+  return ({
     normalattack: L({ chs: '普通攻击', en: 'Normal Attack' }),
     elementalskill: L({ chs: '元素战技', en: 'Elemental Skill' }),
     elementalburst: L({ chs: '元素爆发', en: 'Elemental Burst' }),
@@ -1229,6 +1236,7 @@ export const SOURCE_KIND_LABEL = (key, L) =>
     burst: L({ chs: '元素爆发', en: 'Elemental Burst' }),
     paste: L({ chs: '粘贴的增益', en: 'Pasted buffs' }),
   }[key] || L({ chs: '攻击', en: 'Attack' }));
+};
 
 /* -------------------------------------------------- entry character picker */
 

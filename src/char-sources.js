@@ -6,6 +6,8 @@
 // turns those into the shape DamageCard expects, so picking a character on the
 // axis produces a fully populated card rather than a placeholder.
 
+import { elementOf } from './game';
+
 const SKILL_ORDER = [
   { key: 'normalattack', kind: 'normal', label: { chs: '普通攻击', en: 'Normal Attack' } },
   { key: 'elementalskill', kind: 'skill', label: { chs: '元素战技', en: 'Elemental Skill' } },
@@ -274,7 +276,67 @@ export function buildSources(
   return [
     ...active,
     ...buildTalentDamageSources(charData, element, talentDamageFor(talentDamage, charId)),
+    // ...and the universal 附伤 rows after those, so every character offers one
+    // regardless of what the dataset says about its talents. Nothing above moves,
+    // so a menu that had no such row reads exactly as it did before.
+    ...flatDamageSources(),
   ];
+}
+
+/**
+ * 附伤 -- the row every character carries for a hit that is nobody's talent.
+ *
+ * WHY A UNIVERSAL ROW EXISTS. Not every hit a rotation deals belongs to a talent
+ * of the character who dealt it. Nicole's C1 (奥迹造影·合一) summons a coordinated
+ * attack whenever the ON-FIELD character lands a hit; it deals that character's
+ * element, scales off that character's ATK, and is 视为由该角色造成的伤害 -- so the
+ * log files it under whoever was on field, with an ability name that matches no
+ * row on anyone's talent table. Before this row existed those hits had nowhere to
+ * land and were pinned to whatever row happened to answer, which is how 法尔伽's
+ * 元素爆发 came to hold 14 hits of an Anemo coordinated attack he never cast.
+ *
+ * ONE ROW PER DAMAGE TYPE, 7 elements + Physical. The element such a hit carries
+ * is the on-field character's, so it belongs to the row's IDENTITY rather than to
+ * a per-row setting nobody remembers to change -- and the icon, the resistance
+ * field and the damage-bonus field all key off it. Splitting by type is what makes
+ * the row self-describing: 附伤·风 reads an Anemo hit, 附伤·物理 a Physical one.
+ *
+ * THE MULTIPLIER IS AN INPUT, NOT A FACT. These rows describe hits the local
+ * dataset has no coefficient for, so each stage opens at 100% and is meant to be
+ * typed over -- by hand on the card, or by the gcsim importer from the run's own
+ * `calc.talent`.
+ */
+export const FLAT_SOURCE_PREFIX = 'flatdmg';
+
+export const FLAT_DAMAGE_TYPES = [
+  'Pyro', 'Hydro', 'Cryo', 'Electro', 'Anemo', 'Geo', 'Dendro', 'Physical',
+];
+
+/** The source key of one damage type's 附伤 row. */
+export const flatSourceKey = (type) =>
+  `${FLAT_SOURCE_PREFIX}-${String(type || '').toLowerCase()}`;
+
+/** Every 附伤 row, in the order the game lists damage types. */
+export function flatDamageSources() {
+  return FLAT_DAMAGE_TYPES.map((type) => ({
+    key: flatSourceKey(type),
+    kind: 'flat',
+    icon: null,
+    // The icon is the ELEMENT's, drawn by `ElementGlyph`. `icon` stays null
+    // because that glyph is not a file name `talentIconImg` could resolve.
+    iconKind: 'element',
+    chs: `附伤·${type === 'Physical' ? '物理' : elementOf(type).zh}`,
+    en: `Additional DMG: ${type}`,
+    element: type,
+    stages: [{
+      chs: '附伤',
+      en: 'Additional DMG',
+      mult: 1,
+      hits: 1,
+      terms: [{ mult: 1, hits: 1 }],
+      parts: null,
+    }],
+  }));
 }
 
 /**
