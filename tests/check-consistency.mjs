@@ -178,5 +178,25 @@ if (!FIELD_KEYS.has('resShred') || !STAT_META.resShred || KEY_TO_STAT.resShred !
 if (FIELD_KEYS.has('enemyRes')) fail('the old generic enemyRes field is still in STAT_DEFS');
 else ok('the old generic enemyRes is gone');
 
+/* --------------------- 8. the row and the axis resolve the SAME row ------- */
+console.log('\n8. "which row does this entry hold" is answered the same way twice');
+// THE BUG: \`DamageEntry.liveSummary\` read \`sel.stageIndex || 0\` while
+// \`axis-compute.computePart\` read \`sel?.stageIndex ?? entry.picked?.stageIndex ?? 0\`.
+// An IMPORTED row's summary is written by the file (\`{ sourceKey, sourceLabel }\`)
+// and carries no \`stageIndex\` -- its stage lives on \`picked\`. So the collapsed row
+// fell back to index 0 while the card, the axis and the picker all read the picked
+// index: \布\伦\妮's second skill row (\咚\锵\锵\·\裁\魔\之\惩, 255.7%) was drawn as her first
+// (\叮\铃\铃\·\猎\魔\之\音, 209.3%) -- 7,082 against the card's 8,652 -- until the card
+// mounted and reported. Resolve it from \`picked\` in BOTH places, and keep the
+// source key in step in both places too.
+const axisSrc = fs.readFileSync('src/lib/axis-compute.js', 'utf8');
+const entrySrc = fs.readFileSync('src/components/DamageEntry.jsx', 'utf8');
+const STAGE = /stageIndex = sel\??\.stageIndex \?\? entry\.picked\?\.stageIndex \?\? 0/;
+const KEY = /\(sel\??\.sourceKey \|\| entry\.picked\?\.sourceKey\)/;
+if (!STAGE.test(axisSrc)) fail('axis-compute does not fall back to entry.picked for the stage');
+else if (!STAGE.test(entrySrc)) fail('DamageEntry does not fall back to entry.picked for the stage (the collapsed row will show stage 0)');
+else if (!KEY.test(axisSrc) || !KEY.test(entrySrc)) fail('the two do not agree on the source key fallback either');
+else ok('both read sel.stageIndex ?? entry.picked?.stageIndex ?? 0');
+
 console.log(fails ? `\n${fails} PROBLEMS` : '\nall consistency checks passed');
 process.exit(fails ? 1 : 0);

@@ -388,9 +388,19 @@ function DamageEntry({
     const sel = entry.summary;
     if (!sel || !charData || entry.charId === 'none') return sel || null;
 
-    const src = sources.find((s) => s.key === sel.sourceKey) || sources[0];
+    // WHICH ROW OF THE SOURCE. `summary` is the last REPORT and does not always
+    // carry a `stageIndex`: an IMPORTED row's summary is written by the file
+    // (`{ sourceKey, sourceLabel }`) and its stage lives on `picked`. Reading
+    // only the summary fell back to index 0, so 布伦妮's second skill row
+    // (咚锵锵·裁魔之惩, 255.7%) was drawn as the first (叮铃铃·猎魔之音, 209.3%):
+    // 7,082 against the card's 8,652, until the card mounted and reported a
+    // stageIndex -- which is exactly "the collapsed value is wrong, expanding
+    // fixes it". `picked` is the same fallback `lib/axis-compute.js` uses, so
+    // the collapsed row, the card and the axis all read the same stage.
+    const stageIndex = sel.stageIndex ?? entry.picked?.stageIndex ?? 0;
+    const src = sources.find((s) => s.key === (sel.sourceKey || entry.picked?.sourceKey)) || sources[0];
     if (!src) return sel;
-    const stage = src.stages[Math.min(sel.stageIndex || 0, src.stages.length - 1)];
+    const stage = src.stages[Math.min(Math.max(0, stageIndex), src.stages.length - 1)];
 
     // WHICH PART OF THE ROW, and what element it carries.
     //
@@ -452,15 +462,18 @@ function DamageEntry({
       atkLevel: Number(char?.level) || 90,
     });
 
+    // `stageIndex` goes back out WITH the report: without it the stored summary
+    // stays index-less, this recompute keeps choosing index 0, and the header --
+    // which prefers the reported `stage` -- keeps naming the wrong row.
     return {
-      ...sel, sourceKey: src.key, stage, element: usedElement,
+      ...sel, sourceKey: src.key, stageIndex, stage, element: usedElement,
       partIndex: pinnedPart,
       perHit: r.perHit, total: r.total, hits: effective.hits || 1,
     };
     // `char` is a dependency because the defence zone reads its level -- without
     // it the row keeps a number computed at the old level after the panel changes.
     // `zoneMult` too: dropping a card that names its own zone must move the row.
-  }, [entry.summary, entry.charId, panelStats, charData, sources, partIndex, element, char, zoneMult, entry.scaling]);
+  }, [entry.summary, entry.charId, entry.picked, panelStats, charData, sources, partIndex, element, char, zoneMult, entry.scaling]);
 
   const summary = liveSummary;
 
