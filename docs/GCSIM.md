@@ -15,6 +15,9 @@ node scripts/gcsim-import.mjs --help    # 见脚本头部：--sample / --out / -
 
 产物在规划器右上角「导入」选进去即可。
 
+> 导出文件本身的字段形状（顶层结构、`damage` / `calc` 事件语法、`pre_damage_mods` 这类嵌套状态）
+> 记在 [GCSIM-SAMPLE.md](./GCSIM-SAMPLE.md)，改导入器前先看那份，不用再重新反推。
+
 ## 为什么需要一张对照表
 
 gcsim 用自己的内部 ability 名（`Azure Devour`、`Sturm und Drang Normal 1`），本地数据里没有这个名字，
