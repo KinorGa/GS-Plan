@@ -458,5 +458,47 @@ const coordParts = computeAxis(flatRows, crew, catalogue, talentDamage).byId.get
 eq(coordParts.length, 1, 'the axis computes its single part');
 eq(coordParts[0].element, 'Anemo', 'and prices it as Anemo');
 
+// 8b. the calc-only cards follow a TEAM ability too.
+// 尼可's C4 flat and C6 ignore-def exist ONLY on the calc event -- no damage
+// event ever lists them as a status -- so the guard that decodes them has to
+// accept a `teamAbilities` ability as well as a per-character one. It used to
+// look the ability up in the per-character table alone, and the moment
+// `Arcane Projection: Unity` moved to `teamAbilities` every one of those cards
+// vanished: the row fell to 42-53% of what gcsim rolled.
+console.log('\n8b. a team ability keeps its calc-only cards (尼可 C4 / C6)');
+const coordCalc = {
+  ...sample,
+  character_details: [
+    sample.character_details[0],
+    // The coordinated attack is 尼可's, so her constellations must be on the
+    // team for `buildUnitSources` to have a source to hand the cards to.
+    {
+      name: 'nicole', element: 'pyro', cons: 6, level: 95,
+      talents: { attack: 10, skill: 10, burst: 10 },
+      weapon: sample.character_details[0].weapon, sets: {}, stats: [],
+    },
+  ],
+  logs: [
+    { event: 'damage', char_index: 0, frame: 60, logs: { abil: 'Arcane Projection: Unity', ele: 'anemo', crit: true, damage: 270792.5 } },
+    { event: 'calc', char_index: 0, frame: 60, logs: { abil: 'Arcane Projection: Unity', talent: 6, flat_dmg: 14217.207703220192, ignore_def: 0.4 } },
+  ],
+};
+const coordCalcCharData = { ...charData, 10000131: read('data/char/chs/10000131.json') };
+const coordCalcRun = importGcsim({
+  sample: coordCalc, mapping, catalogues, charData: coordCalcCharData, talentDamage, setBonuses,
+});
+const coordFlat = coordCalcRun.doc.axes[0].entries[0];
+const cardValue = (entry, libKey, key) => {
+  const card = entry.drops.find((d) => d.source.libKey === libKey);
+  return (card?.buffs || []).find((b) => b.key === key)?.value;
+};
+eq(
+  coordFlat.drops.some((d) => d.source.libKey === 'constellation:10000131:c6'),
+  true,
+  "尼可's C6 rides the 附伤 row"
+);
+eq(cardValue(coordFlat, 'constellation:10000131:c6', 'defIgnore'), 40, 'and carries the 40% defence ignore');
+near(cardValue(coordFlat, 'talent:10000131:p4', 'flatDmg'), 14217.207703, "尼可's p4 flat_dmg rides it too", 1e-6);
+
 console.log(bad ? `\n${bad} PROBLEMS` : '\nall checks passed');
 process.exit(bad ? 1 : 0);

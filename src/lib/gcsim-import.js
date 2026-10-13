@@ -834,7 +834,11 @@ export function importGcsim({
     // flush, and decoding them would only fill the report with notes about rows
     // that do not exist.
     const calcL = hitCalc?.logs;
-    if (calcL && abilities[idFor[ci].id]?.[L.abil]) {
+    // A TEAM ability (see `teamAbilities`) becomes a row too, so it needs the
+    // calc-only cards just as much: 尼可's C4 flat and C6 ignore-def are ONLY here,
+    // and looking them up in the per-character table alone dropped every one of
+    // them the moment `Arcane Projection: Unity` moved out of it.
+    if (calcL && (abilities[idFor[ci].id]?.[L.abil] || teamAbilities[L.abil])) {
       attachCalcFlat(hit, ci, calcL, event.frame ?? 0, L.abil);
       attachCalcIgnoreDef(hit, ci, calcL);
     }
