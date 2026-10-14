@@ -500,5 +500,45 @@ eq(
 eq(cardValue(coordFlat, 'constellation:10000131:c6', 'defIgnore'), 40, 'and carries the 40% defence ignore');
 near(cardValue(coordFlat, 'talent:10000131:p4', 'flatDmg'), 14217.207703, "尼可's p4 flat_dmg rides it too", 1e-6);
 
+/* --- 9. the calc event corrects the log's ROUNDED stats ------------------- */
+console.log('\n9. the calc event carries the stats the log only rounds');
+// Every `dmg%` / `cd` a status contributes is written to the log at TWO DECIMALS,
+// but the calc event carries the EXACT totals the run applied (`bonus_dmg`,
+// `ele_per`, `cd`). 法尔伽's Wolf weapon shows 7.5% CRIT DMG per stack, logged as
+// 22 at three stacks where the run used 22.5 -- summing the rounded cards left
+// the row 0.1-0.4% low. The mismatch is reconciled against the calc, onto the
+// hit's largest matching card, and the corrected value still rounds to what the
+// log showed.
+const rounded = {
+  ...sample,
+  logs: [
+    {
+      event: 'damage', char_index: 0, frame: 80,
+      logs: {
+        abil: 'Windbound Execution', ele: 'anemo', crit: true, damage: 1,
+        // 7.5% CRIT DMG AND DMG per stack, three stacks: the real 22.5, logged 22.
+        'gest-of-the-mighty-wolf-stacks': ['status: added', 'expiry_frame: 100', 'cd: 0.22', 'dmg%: 0.22'],
+      },
+    },
+    {
+      event: 'calc', char_index: 0, frame: 80,
+      // `ele_per` is the panel's Anemo goblet (0.466); the run's total 伤害加成 is
+      // 0.691, i.e. a generic 0.225 -- not the 0.22 the status line rounded to.
+      // No `cr`: this hit carries no CRIT Rate source, and a rate the log cannot
+      // name is exactly what the cap is there to REPORT rather than fold in.
+      logs: { abil: 'Windbound Execution', talent: 5.916, cd: 2.601, ele_per: 0.466, bonus_dmg: 0.691 },
+    },
+  ],
+};
+const roundRun = importGcsim({ sample: rounded, mapping, catalogues, charData, talentDamage, setBonuses });
+const roundRow = roundRun.doc.axes[0].entries[0];
+near(cardValue(roundRow, 'weapon:12515:r1', 'dmgBonus'), 22.5, 'the rounded 22% DMG card is reconciled to 22.5', 1e-6);
+near(cardValue(roundRow, 'weapon:12515:r1', 'critDmg'), 22.5, 'the rounded 22% CRIT DMG card too', 1e-6);
+eq(
+  (roundRun.report.buffs.notes || []).some((n) => n.kind?.startsWith('buff-calc-stat')),
+  false,
+  'a live calc leaves no rounding note: the residue was fully explained'
+);
+
 console.log(bad ? `\n${bad} PROBLEMS` : '\nall checks passed');
 process.exit(bad ? 1 : 0);

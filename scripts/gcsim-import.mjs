@@ -125,6 +125,10 @@ function main() {
     char: readJson(path.join(ROOT, 'public/data/charlist.json')),
     weapon: readJson(path.join(ROOT, 'public/data/weaponlist.json')),
     artifact: readJson(path.join(ROOT, 'public/data/artifactlist.json')),
+    // The stat FACTORS, so the importer derives each unit's panel exactly as the
+    // planner does (see `panelByCharId`). Optional for tests, which pass a
+    // synthetic catalogue and do not exercise the panel reconciliation.
+    stats: readJson(path.join(ROOT, 'public/data/stats-compact.json')),
   };
 
   const ids = (sample.character_details || []).map(
@@ -216,6 +220,12 @@ function printReport(report, outFile) {
       console.error(`增益：「${n.ability}」的附加伤害 ${n.value} 拆不成 calc 表里的来源（最接近 ${n.closest}），整笔挂给了第一条规则。`);
     } else if (n.kind === 'buff-calc-ignore-def-unexplained') {
       console.error(`增益：无视防御 ${n.value}% 拆不成 calc 表里的份额，整笔挂给了第一条规则。`);
+    } else if (n.kind === 'buff-calc-dmg-no-card') {
+      console.error(`增益：伤害加成里还有 ${n.value}% 不是日志舍入能解释的，这一击没有可挂的卡，没写进去。`);
+    } else if (n.kind === 'buff-calc-stat-no-card') {
+      console.error(`增益：${n.key} 还差 ${n.value} 不是日志舍入能解释的，这一击没有可挂的卡，没写进去。`);
+    } else if (n.kind === 'buff-calc-stat-residual') {
+      console.error(`增益：${n.key} 与 calc 相差 ${n.value}，超出日志舍入的范围，没往卡里摊（面板或规则可能对不上）。`);
     } else {
       console.error(`增益：${n.status} 的 ${n.key} 在一行内出现了两个值（${n.from} / ${n.to}），取了第一个。`);
     }

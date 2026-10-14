@@ -63,9 +63,11 @@
 
 import { buildSources, flatSourceKey, FLAT_SOURCE_PREFIX } from '../char-sources';
 import { SLOT_KEYS, SUB_COUNT, blankPiece, mainStatValue } from './artifact-model';
+import { activeArtifacts } from './artifact-sets';
 import { buildUnitSources } from './buff-sources';
 import { damageTypeSuffix } from './elements';
 import { CONFIG_KIND, CONFIG_VERSION } from './config-file';
+import { derivePanel } from './stat-derive';
 
 /**
  * gcsim's own spelling of a name -> the id the local catalogue uses.
@@ -197,6 +199,38 @@ export function importGcsim({
   const statNotes = [];
   const teamOut = team || buildTeam({ idFor, catalogues, mapping, notes: statNotes });
   const sourcesByKey = teamSources(teamOut, { catalogue: catalogues, charData, setBonuses });
+
+  /**
+   * Each unit's PANEL, derived here exactly as the app derives it later.
+   *
+   * The reconciliation below (see `applyResidue`) has to know the panel term a
+   * stat already carries so it can tell the ROUNDED buffer cards from a real
+   * difference: `critDmg` is 88.4 from the character's own ascension before any
+   * card is added, and only the panel tells us that. Calling the app's OWN
+   * `derivePanel` with the app's own inputs -- the same catalogue, the same
+   * slots `activeArtifacts` hands the cards -- is what makes the number the row
+   * computes match the one the panel editor shows; a second formula here would
+   * be exactly the drift every other comment in this file warns about.
+   */
+  const panelByCharId = new Map();
+  for (const unit of teamOut?.units || []) {
+    const id = unit?.char?.id;
+    const detail = id != null ? charData[id] : null;
+    if (!detail) continue;
+    const element = catalogues.char?.[id]?.element
+      || (detail.element ? detail.element[0].toUpperCase() + detail.element.slice(1) : null);
+    panelByCharId.set(String(id), derivePanel({
+      charId: String(id),
+      detail,
+      level: unit.char?.level ?? 90,
+      element,
+      weaponId: unit.weapon?.id ?? null,
+      weapon: catalogues.weapon?.[unit.weapon?.id] || null,
+      artifacts: activeArtifacts(unit),
+      stats: catalogues.stats,
+    }).values);
+  }
+
   const sourceOf = (key) => {
     const known = sourcesByKey.get(key);
     if (known) return known;
@@ -456,6 +490,69 @@ export function importGcsim({
     for (const r of best.picks) {
       setHitBuff(hit, 'calc:ignore_def', r.source, 'defIgnore', round6(Number(r.share) * 100));
     }
+  };
+
+  /**
+   * THE STATS THE LOG ROUNDS.
+   *
+   * Every stat a status contributes is written to the log at TWO DECIMALS, but the
+   * calc event carries the EXACT totals the run applied: `bonus_dmg` (the whole
+   * 伤害加成, `ele_per` folded in), `cd` and `cr`. Summing the rounded cards
+   * therefore lands a few thousandths off gcsim's number: 法尔伽's Windbound
+   * Execution reads 0.15 + 0.40 = 0.55 where the run used 0.5531553, its Wolf
+   * weapon shows 22% CRIT DMG for a real 22.5 (7.5 per stack, half-to-even in the
+   * log), and the row comes out 0.1-0.4% low -- right shape, wrong digit, which is
+   * exactly what a reader notices.
+   *
+   * THE CALC EVENT IS THE ORACLE, as it is for `flat_dmg` and `ignore_def`. What
+   * the row must hold is the exact total; the cards already sum to everything but
+   * the rounding dust, so `total - panel - cards` is what the log lost. The residue
+   * is placed on the hit's LARGEST matching card -- the dominant contributor, and
+   * the one a fraction of a percent plausibly belongs to -- which keeps the row's
+   * total at what gcsim rolled. The corrected value still ROUNDS to the number the
+   * log showed, so no claim is made beyond the log's own precision.
+   *
+   * The residue is CAPPED (`STAT_RESIDUE_CAP`): a real difference between the
+   * panel and the run is not rounding, and smearing it onto a buffer card would
+   * hide the bug. Anything past the cap is REPORTED, not folded in.
+   *
+   * The ELEMENT term needs no correction: it comes from the panel, and `ele_per`
+   * reads back exactly from the goblet plus the element% cards this pass already
+   * absorbed.
+   */
+  const STAT_RESIDUE_CAP = 2; // percent; the most a pair of half-to-even cards can hold
+  const applyResidue = (hit, key, exact, base) => {
+    const cards = [...hit.buffs.values()].filter((b) => b.key === key);
+    const logged = cards.reduce((n, b) => n + (Number(b.value) || 0), 0);
+    const residue = Number(exact) - (Number(base) || 0) - logged;
+    if (!Number.isFinite(residue) || Math.abs(residue) < 1e-9) return;
+    if (Math.abs(residue) > STAT_RESIDUE_CAP) {
+      pushBuffNote({ kind: 'buff-calc-stat-residual', key, value: round6(residue) });
+      return;
+    }
+    if (!cards.length) {
+      pushBuffNote({ kind: 'buff-calc-stat-no-card', key, value: round6(residue) });
+      return;
+    }
+    cards.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+    cards[0].value = round6(cards[0].value + residue);
+  };
+
+  /** 伤害加成: the generic dmg% the calc applied, minus what the log named. */
+  const attachCalcBonus = (hit, calcL, panel) => {
+    const exact = Number(calcL.bonus_dmg);
+    if (!Number.isFinite(exact)) return;
+    const elePer = Number(calcL.ele_per) || 0;
+    applyResidue(hit, 'dmgBonus', (exact - elePer) * 100, panel?.dmgBonus);
+  };
+
+  /** CRIT DMG / CRIT Rate: the crit the calc applied, minus the panel and cards. */
+  const attachCalcCrit = (hit, calcL, panel) => {
+    if (!panel) return;
+    const cd = Number(calcL.cd);
+    if (Number.isFinite(cd)) applyResidue(hit, 'critDmg', cd * 100, panel.critDmg);
+    const cr = Number(calcL.cr);
+    if (Number.isFinite(cr)) applyResidue(hit, 'critRate', cr * 100, panel.critRate);
   };
   let seq = 0;
   const nextId = () => `e${++seq}`;
@@ -841,6 +938,9 @@ export function importGcsim({
     if (calcL && (abilities[idFor[ci].id]?.[L.abil] || teamAbilities[L.abil])) {
       attachCalcFlat(hit, ci, calcL, event.frame ?? 0, L.abil);
       attachCalcIgnoreDef(hit, ci, calcL);
+      const hitPanel = panelByCharId.get(idFor[ci].id) || null;
+      attachCalcBonus(hit, calcL, hitPanel);
+      attachCalcCrit(hit, calcL, hitPanel);
     }
   }
   for (const cast of casts) flush(cast);

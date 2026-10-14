@@ -96,7 +96,15 @@ export async function importGcsimSample(buffer, lang = 'chs') {
   return importGcsim({
     sample,
     mapping,
-    catalogues: { char: catalogue.chars, weapon: catalogue.weapons, artifact: artifacts.sets },
+    // `stats` is the stat FACTORS table the planner already loaded, so the importer
+    // derives each unit's panel from the same numbers the panel editor uses (see
+    // `panelByCharId`); without it `derivePanel` falls back to the rounded tables.
+    catalogues: {
+      char: catalogue.chars,
+      weapon: catalogue.weapons,
+      artifact: artifacts.sets,
+      stats: catalogue.stats,
+    },
     charData,
     talentDamage: await loadTalentDamage(),
     setBonuses,
