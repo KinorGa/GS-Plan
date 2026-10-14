@@ -28,7 +28,7 @@ import { derivePanel } from '../lib/stat-derive';
 import { repairOverrides } from '../lib/axes-store';
 import {
   DRAG_MIME, KEY_TO_STAT, STAT_META, mergeStats,
-  foldDrops, foldZoneDrops, customZoneMultiplier, zoneFactor, zoneFactorLabel,
+  foldDrops, foldZoneDrops, splitZoneFactors, zoneFactor, zoneFactorLabel,
   buffsToText,
 } from './buff-model';
 import { readClipboard, writeClipboard, subscribeClipboard, clipboardRowCount } from '../lib/buff-clipboard';
@@ -263,7 +263,10 @@ function DamageEntry({
     () => foldZoneDrops(drops, scopeOfDrop, buffKeyOf),
     [drops, scopeOfDrop],
   );
-  const zoneMult = useMemo(() => customZoneMultiplier(customZones), [customZones]);
+  // The zones split in two: 倍率乘区 rides the hit's coefficient (`multZone`), the
+  // rest stay one factor at the end (`zoneMult`). See `splitZoneFactors`.
+  const { mult: multZone, zone: zoneMult } =
+    useMemo(() => splitZoneFactors(customZones), [customZones]);
 
   /**
    * Copy this entry's buffs into the in-page stash.
@@ -460,9 +463,10 @@ function DamageEntry({
       // let the collapsed row keep showing an average after the user had picked a
       // crit -- and, worse, after a collapse it was the ONLY surviving value.
       critMode: entry.critMode || 'avg',
-      // The same independent zone the card applies, so the collapsed row and the
+      // The same independent zones the card applies, so the collapsed row and the
       // card cannot disagree about a user-named buff.
       zoneMult,
+      multZone,
       // The ROW reads the same attacker level the card does. Omitting it here
       // would restore the exact divergence this recompute exists to prevent: the
       // row on the formula's 90 default while the card used the real level.
@@ -480,7 +484,7 @@ function DamageEntry({
     // `char` is a dependency because the defence zone reads its level -- without
     // it the row keeps a number computed at the old level after the panel changes.
     // `zoneMult` too: dropping a card that names its own zone must move the row.
-  }, [entry.summary, entry.charId, entry.picked, panelStats, charData, sources, partIndex, element, char, zoneMult, entry.scaling]);
+  }, [entry.summary, entry.charId, entry.picked, panelStats, charData, sources, partIndex, element, char, zoneMult, multZone, entry.scaling]);
 
   const summary = liveSummary;
 
@@ -783,8 +787,10 @@ function DamageEntry({
       // in. Passing one panel for both is what made a dropped buff move the
       // collapsed row and leave the card's result untouched.
       computeStats={panelStats}
-      // The user's own multiplier zone, applied as its own factor.
+      // The user's own multiplier zones: 倍率乘区 on the coefficient, the rest as
+      // their own factor.
       zoneMult={zoneMult}
+      multZone={multZone}
       // THE TWO CARD-LOCAL CHOICES THE ENTRY MUST REMEMBER.
       //
       // Collapsing an entry unmounts the card, so `critMode` and `reactionKey` as

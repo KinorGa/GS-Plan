@@ -22,6 +22,7 @@ import { useI18n } from '../i18n';
 import { weaponIconName } from '../lib/catalogue';
 import { DAMAGE_TYPES, KEY_SUFFIX, TYPE_ZH } from '../lib/elements';
 import { isFormula, resolve, partialAt, matchesFor } from '../lib/buff-formula';
+import { RAW_MULT_KEYS } from './buff-model';
 
 /* ------------------------------------------------------------- icon specs */
 
@@ -212,6 +213,13 @@ export const BUFF_KEYS = {
   // 大权 carries NO `%` SUFFIX because its value IS the multiplier: 2 means twice
   // the damage. A `%` there would promise "+2%" while the arithmetic did "×2".
   aPower: { chs: '大权', en: 'Authority', suffix: '', sign: false },
+  // 倍率乘区 is the situational factor on the hit's own MULTIPLIER -- 法尔伽's
+  // 狂飙突进 at 220% of the table value, its C1 doubling 四风将起. Like 大权 it is
+  // a direct factor (no `%` suffix), but same-name sources MULTIPLY rather than
+  // add, because each is a ratio (see `PRODUCT_ZONE_KEYS`). The gcsim importer
+  // writes it as `calc.talent / the table's coefficient`, so a later talent-level
+  // change re-derives the multiplier and the factor still applies.
+  multZone: { chs: '倍率乘区', en: 'Multiplier Zone', suffix: '', sign: false },
   // 擢升 is a percentage zone -- `1 + v/100` -- and sums with any other
   // percentage zone, so 擢升 30 + 潮涌 20 gives one factor of 1.50.
   ascension: { chs: '擢升', en: 'Ascension', suffix: '%', sign: true },
@@ -316,7 +324,19 @@ function BuffCard({
   }, [pinned]);
 
   const updateBuff = (i, patch) => {
-    const next = buffs.map((b, idx) => (idx === i ? { ...b, ...patch } : b));
+    // PICKING A RAW MULTIPLIER DEFAULTS ITS VALUE TO 1, NOT 0. 大权 and 倍率乘区
+    // read their value AS the factor, so a fresh row's 0 would multiply the hit by
+    // zero -- a garbage number rather than the honest "nothing set yet". Every
+    // other key keeps 0, which for a percentage means no effect.
+    const next = buffs.map((b, idx) => {
+      if (idx !== i) return b;
+      const merged = { ...b, ...patch };
+      if (patch.key && RAW_MULT_KEYS.has(patch.key)) {
+        const v = merged.value;
+        if (v === '' || v == null || Number(v) === 0) merged.value = 1;
+      }
+      return merged;
+    });
     onBuffsChange?.(next);
   };
 

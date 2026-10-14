@@ -130,7 +130,23 @@ export const NEUTRAL_KEYS = new Set([
  * Kept as a set so a second such zone is a one-line change rather than a new
  * branch buried in the fold.
  */
-export const RAW_MULT_KEYS = new Set(['aPower']);
+export const RAW_MULT_KEYS = new Set(['aPower', 'multZone']);
+
+/**
+ * Zones whose value is a RATIO per source, so the same name MULTIPLIES.
+ *
+ * 倍率乘区 is one entry that holds a situational factor on the hit's multiplier
+ * (法尔伽's 狂飙突进 runs at 220% of the table value, its C1 doubles 四风将起).
+ * Two cards stating 2.2 and 2 are two factors, so they compose as 4.4 -- the
+ * opposite of 大权, where the same name adds because `2 + 2` is what "two sources
+ * of the same bonus" means.
+ *
+ * It matters because the gcsim importer writes this key: it stores the RATIO
+ * gcsim used (its `calc.talent` over the table's coefficient) instead of the
+ * absolute multiplier, so raising the talent level re-derives the multiplier at
+ * the new level and the situational factor still rides on top.
+ */
+export const PRODUCT_ZONE_KEYS = new Set(['multZone']);
 
 /**
  * The custom multiplier zones a set of buffs declares, merged by NAME.
@@ -145,9 +161,10 @@ export const RAW_MULT_KEYS = new Set(['aPower']);
  * (so it is selectable) and still be a zone -- that is exactly what 大权 and 擢升
  * are -- so membership of the dropdown must never imply "adds into the panel".
  *
- * SAME NAME MERGES, ADDITIVELY. Two cards that both say 大权 1.2 are one zone of
- * 1.2 + 1.2, not two zones multiplying. The name is the user's claim that these are
- * the same effect, and it is applied once.
+ * SAME NAME MERGES. Two cards that both say 大权 1.2 are one zone of
+ * 1.2 + 1.2, not two zones multiplying -- the name is the user's claim that these
+ * are the same effect, and it is applied once. The exception is a PRODUCT zone
+ * (倍率乘区, see `PRODUCT_ZONE_KEYS`): those are ratios, so 2.2 and 2 give 4.4.
  *
  * PER ENTRY, NOT GLOBAL. A dropped buff belongs to one axis entry, so 大权 on one
  * row says nothing about another row -- two entries can use the same word for
@@ -184,7 +201,9 @@ export function foldCustomZones(buffs, labelFor, scope) {
     const label = labelOf(name) || { chs: name, en: name };
     const cur = byName.get(name)
       || { name, chs: label.chs, en: label.en, value: 0, count: 0, raw };
-    cur.value += n;
+    // A PRODUCT zone is a ratio per source, so it composes by multiplication;
+    // everything else adds (see `PRODUCT_ZONE_KEYS`).
+    cur.value = PRODUCT_ZONE_KEYS.has(name) && cur.count > 0 ? cur.value * n : cur.value + n;
     cur.count += 1;
     byName.set(name, cur);
   }
@@ -220,6 +239,30 @@ export function customZoneMultiplier(zones) {
     else pct += z.value;
   }
   return (1 + pct / 100) * raw;
+}
+
+/**
+ * Split the custom zones into the TWO places the arithmetic needs them.
+ *
+ * `mult` is the 倍率乘区 family (`PRODUCT_ZONE_KEYS`): its value scales the hit's
+ * own COEFFICIENT, inside `talent` and before 附加伤害值, because "the multiplier
+ * is 2.2x" is a claim about the coefficient and not about the flat 附加伤害 the
+ * hit also carries. `zone` is everything else, still one factor at the end (see
+ * `customZoneMultiplier`). `mult` is exactly 1 with no such card, so an entry
+ * without one is arithmetically identical to before the zone existed.
+ *
+ * A split object rather than one number because the two land in different parts
+ * of `computeDamage`; folding them together multiplies 附加伤害 by the multiplier
+ * zone, which is the bug this exists to remove.
+ */
+export function splitZoneFactors(zones) {
+  let mult = 1;
+  const rest = [];
+  for (const z of zones || []) {
+    if (PRODUCT_ZONE_KEYS.has(z.name)) mult *= z.value;
+    else rest.push(z);
+  }
+  return { mult, zone: customZoneMultiplier(rest) };
 }
 
 /**
@@ -420,10 +463,10 @@ export function foldDrops(drops, scopeForOwner) {
  * Fold the CUSTOM ZONES of a list of drops, each against its own owner's scope.
  *
  * The zone twin of `foldDrops`, and for the same reason: a formula inside a zone
- * card reads that card's own owner. The results merge BY NAME, so two cards
- * naming 大权 add rather than one replacing the other -- which is what
- * `foldCustomZones` already does for a single list, applied here across drops
- * without a caller having to hand-write the merge.
+ * card reads that card's own owner. The results merge BY NAME -- two cards naming
+ * 大权 add, two naming 倍率乘区 multiply -- which is what `foldCustomZones`
+ * already does for a single list, applied here across drops without a caller
+ * having to hand-write the merge.
  *
  * @param {Array} drops                 `{ source, buffs }` shapes.
  * @param {(drop) => object|undefined} [scopeForOwner]
@@ -437,6 +480,7 @@ export function foldZoneDrops(drops, scopeForOwner, labelFor) {
     for (const z of foldCustomZones(d?.buffs || [], labelFor, scope)) {
       const cur = byName.get(z.name);
       if (!cur) byName.set(z.name, { ...z });
+      else if (PRODUCT_ZONE_KEYS.has(z.name)) { cur.value *= z.value; cur.count += z.count; }
       else { cur.value += z.value; cur.count += z.count; }
     }
   }

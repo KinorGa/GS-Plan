@@ -107,10 +107,14 @@ const resKey = (prefix, element) => {
  * @param {number} [opts.zoneMult] Independent multiplier zone from the user's own
  *                                 buff names (`buff-model.foldCustomZones`).
  *                                 Defaults to 1, i.e. no zone.
+ * @param {number} [opts.multZone] The 倍率乘区 factor: it scales the hit's own
+ *                                 COEFFICIENT, so it sits inside `talent` and BEFORE
+ *                                 附加伤害值 -- a +1000 附加伤害 is not doubled by
+ *                                 "the multiplier is 2x". Defaults to 1.
  */
 export function computeDamage(
   stats,
-  { stage, reaction, element, critMode, atkLevel = 90, zoneMult = 1 }
+  { stage, reaction, element, critMode, atkLevel = 90, zoneMult = 1, multZone = 1 }
 ) {
   const {
     hp, atk, def, hpPct, atkPct, defPct, em, critRate, critDmg, er,
@@ -140,7 +144,11 @@ export function computeDamage(
   const totalAtk = atk * (1 + atkPct / 100) + flatAtk;
   const totalDef = def * (1 + defPct / 100) + flatDef;
 
-  const talent = stage.mult * (1 + (stage.bonus || 0)) * (1 + talentBonus / 100);
+  // 倍率乘区 rides the COEFFICIENT (`multZone`), inside the talent multiplier and
+  // BEFORE 附加伤害值, because "the multiplier is 2.2x" is a claim about the
+  // coefficient and not about the flat 附加伤害 the hit also carries.
+  const talent =
+    stage.mult * multZone * (1 + (stage.bonus || 0)) * (1 + talentBonus / 100);
   // 附加伤害值 sits OUTSIDE the talent multiplier but INSIDE the bonus bracket:
   // `(atk * talent + flatDmg) * (1 + dmg%)`. That is the game's own order (a
   // 附加伤害 source like 尼可 C4 scales off ITS owner's ATK and adds a flat sum to
@@ -221,7 +229,8 @@ export function computeDamage(
 
   return {
     totalHp, totalAtk, totalDef, talent, emBonus, reactMult, critMult,
-    defMult, resMult, bonusPct, withBonus, zoneMult, zoned, perHit, total, er,
+    defMult, resMult, bonusPct, withBonus, zoneMult, multZone, zoned, perHit,
+    total, er,
   };
 }
 

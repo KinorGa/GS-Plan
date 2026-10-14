@@ -474,6 +474,12 @@ export default function DamageCard({
    * unchanged: multiplying by 1 is a no-op.
    */
   zoneMult = 1,
+  /**
+   * The 倍率乘区 factor, already split out of `zoneMult` by the host: it scales the
+   * hit's COEFFICIENT (see `damage.computeDamage`), so 附加伤害值 is NOT multiplied
+   * by it. `1` by default.
+   */
+  multZone = 1,
   // Draw the SOURCE COLUMN AND NOTHING ELSE.
   //
   // For the parent of a compound row, whose only job is to change which skill and
@@ -757,8 +763,9 @@ export default function DamageCard({
         critMode,
         atkLevel,
         zoneMult,
+        multZone,
       }),
-    [effectiveStats, effectiveStage, reaction, critMode, hitElementName, atkLevel, zoneMult]
+    [effectiveStats, effectiveStage, reaction, critMode, hitElementName, atkLevel, zoneMult, multZone]
   );
 
   // Publish the current selection + damage so a host can render a collapsed

@@ -3,7 +3,12 @@
 // `buff-formula.js` deliberately has no React and no storage, so the scope and
 // the parser can be verified directly instead of by reading pixels.
 import { SYMBOLS, TOTALS, scopeFor, scopeForUnit, identityOf, evaluate, analyse, isFormula, resolve, valueOf, tokenize, parse, symbolByName, partialAt, matchesFor } from '../src/lib/buff-formula.js';
-import { foldDrops, numericValue } from '../src/components/buff-model.js';
+import {
+  foldDrops, numericValue,
+  foldCustomZones, foldZoneDrops, customZoneMultiplier, splitZoneFactors,
+  zoneFactorLabel,
+} from '../src/components/buff-model.js';
+import { computeDamage } from '../src/lib/damage.js';
 import { derivePanel } from '../src/lib/stat-derive.js';
 import fs from 'node:fs';
 
@@ -154,6 +159,56 @@ checkEq('12abc3 refuses', Number.isNaN(valueOf('12abc3', unitScope)) ? 1 : 0, 1)
 checkEq('...and numericValue gives 0, not 123', numericValue('12abc3', unitScope), 0);
 check('a plain number still works', numericValue('120', unitScope), 120);
 check('a formula with no scope refuses to 0', numericValue('=$总攻击力*0.1', undefined), 0);
+
+console.log('\n11. custom multiplier zones: 大权 adds, 倍率乘区 multiplies');
+const zone = (key, value) => ({ key, value, tag: '' });
+const foldZones = (buffs) => foldCustomZones(buffs, undefined);
+// SAME NAME, DIFFERENT RULES. 大权 2 twice is 2 + 2 = 4 (two sources of one
+// bonus); 倍率乘区 2.2 twice is 2.2 * 2 = 4.4 (two ratio factors). The gcsim
+// importer leans on the second, which is why it must not be additively merged.
+check('大权 2 + 大权 2 = 4', customZoneMultiplier(foldZones([zone('aPower', 2), zone('aPower', 2)])), 4);
+check('倍率乘区 2.2 * 2 = 4.4', splitZoneFactors(foldZones([zone('multZone', 2.2), zone('multZone', 2)])).mult, 4.4);
+check('a percentage zone is 1 + sum/100',
+  customZoneMultiplier(foldZones([zone('擢升', 30), zone('潮涌', 20)])), 1.5);
+// ACROSS DROPS (one card per source) the same rule holds.
+check('foldZoneDrops multiplies 倍率乘区 across cards',
+  splitZoneFactors(foldZoneDrops([
+    { buffs: [zone('multZone', 2.2)] }, { buffs: [zone('multZone', 2)] },
+  ])).mult, 4.4);
+check('foldZoneDrops adds 大权 across cards',
+  customZoneMultiplier(foldZoneDrops([
+    { buffs: [zone('aPower', 2)] }, { buffs: [zone('aPower', 3)] },
+  ])), 5);
+// THE SPLIT: 倍率乘区 comes OUT of the end-of-hit factor and rides the coefficient
+// instead. Folding it into `zoneMult` multiplied 附加伤害值 by the multiplier too,
+// which is not what "the multiplier is 2.2x" means and overstated every imported
+// 法尔伽 row by up to 45%.
+const split = splitZoneFactors(foldZones([zone('multZone', 2.2), zone('擢升', 30)]));
+check('the split takes 倍率乘区 out of the end factor', split.mult, 2.2);
+check('...and leaves the rest as one factor', split.zone, 1.3);
+check('a row with only 倍率乘区 has an end factor of 1',
+  splitZoneFactors(foldZones([zone('multZone', 2.2)])).zone, 1);
+
+// WHERE IT LANDS: scaling the coefficient leaves 附加伤害值 alone, while `zoneMult`
+// doubles it as well. Same panel both times, so the difference IS the home.
+const panel = {
+  hp: 10000, atk: 1000, def: 500, hpPct: 0, atkPct: 0, defPct: 0, em: 0, er: 100,
+  critRate: 0, critDmg: 0, physBonus: 0, dmgBonus: 0, reactionBonus: 0,
+  defShred: 100, defIgnore: 0, enemyLevel: 90, enemyResAnemo: 0, talentBonus: 0,
+  flatDmg: 1000,
+};
+const dmgOpts = {
+  stage: { mult: 1, bonus: 0, hits: 1 }, reaction: { amp: false, base: 1 },
+  element: 'Anemo', critMode: 'never', atkLevel: 90,
+};
+check('倍率乘区 doubles the coefficient, not 附加伤害值',
+  computeDamage(panel, { ...dmgOpts, multZone: 2 }).total, 3000);
+check('...where zoneMult doubles 附加伤害值 too (the old, wrong home)',
+  computeDamage(panel, { ...dmgOpts, zoneMult: 2 }).total, 4000);
+
+// The label: a raw zone IS the number, a percentage zone is the 1 + v/100 factor.
+checkEq('a raw zone reads bare', zoneFactorLabel({ raw: true, value: 2.2 }), '2.2');
+checkEq('a percentage zone reads its factor', zoneFactorLabel({ raw: false, value: 20 }), '1.2');
 
 console.log(fails ? `\n${fails} PROBLEMS` : '\nall checks passed');
 process.exit(fails ? 1 : 0);

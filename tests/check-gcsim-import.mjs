@@ -317,7 +317,13 @@ eq(parent.summary.parts?.length, 2, 'the summary carries a part per child');
 eq(parent.children.map((c) => c.partIndex).join(','), '0,1', 'children are indexed by part');
 eq(parent.children[0].element, 'Anemo', 'part 1 keeps its own element');
 eq(parent.children[1].element, 'Cryo', 'part 2 keeps its own element');
-eq(parent.children.every((c) => !c.drops.length), true, 'a log with no statuses attaches no cards');
+// The only card a status-less hit carries is the 倍率乘区 ratio the importer
+// derives from gcsim's coefficient -- no log status became a card.
+eq(
+  parent.children.every((c) => c.drops.length === 1 && c.drops[0].source.libKey === 'mult-zone'),
+  true,
+  'a log with no statuses attaches only the 倍率乘区 ratio card',
+);
 // The row must be able to NAME ITSELF without a card: the parent header reads
 // the stored summary, and a card only reports one once the row is expanded --
 // which is why an imported compound row showed "—" until it was opened, and
@@ -329,7 +335,16 @@ eq(
 );
 
 // The numbers themselves: the axis must compute each child at GCSIM'S
-// coefficient, not at the table's -- that is the whole point of \`scaling\`.
+// coefficient. That coefficient is no longer stored absolutely -- it is the
+// TABLE's coefficient times the 倍率乘区 ratio the importer derived from
+// \`calc.talent\` -- so the check multiplies the pair back together. Doing it that
+// way is also what proves the pair is right: the row keeps a clean table number
+// (which follows a later talent-level change) and the product still equals what
+// gcsim rolled.
+const multZoneRatio = (entry) => {
+  const card = entry.drops.find((d) => d.source.libKey === 'mult-zone');
+  return card?.buffs?.[0]?.value ?? 1;
+};
 const { computeAxis } = await import('../src/lib/axis-compute.js');
 const { activeArtifacts } = await import('../src/lib/artifact-sets.js');
 const stats = read('data/stats-compact.json');
@@ -352,8 +367,8 @@ const crew = split.doc.team.units.map((u) => ({
 const axis = computeAxis(split.doc.axes[0].entries, crew, catalogue, talentDamage);
 const computed = axis.byId.get(parent.id);
 eq(computed.parts.length, 2, 'the axis computes both parts');
-near(computed.parts[0].mult, 1.5, 'part 1 uses gcsim\'s coefficient', 1e-6);
-near(computed.parts[1].mult, 3.0, 'part 2 uses gcsim\'s coefficient', 1e-6);
+near(computed.parts[0].mult * multZoneRatio(parent.children[0]), 1.5, "part 1 computes to gcsim's coefficient", 1e-6);
+near(computed.parts[1].mult * multZoneRatio(parent.children[1]), 3.0, "part 2 computes to gcsim's coefficient", 1e-6);
 eq(computed.parts[0].element, 'Anemo', 'part 1 is measured against its own element');
 eq(computed.parts[1].element, 'Cryo', 'part 2 is measured against its own element');
 near(
@@ -412,7 +427,11 @@ const burst = woven.doc.axes[0].entries
   .find((e) => e.summary.sourceKey === 'elementalskill' && e.picked.stageIndex === 8);
 eq(Boolean(burst), true, 'the cast is one entry');
 eq(burst.children?.length, 3, 'all three parts of the cast stay in ONE entry');
-eq(burst.summary.parts.map((p) => p.mult).join(','), '1.5,3,4.5', "each part keeps gcsim's own coefficient");
+// The parts carry the TABLE's coefficients now; gcsim's situational factor rides
+// as a 倍率乘区 card on each child, so the PRODUCT is what has to match.
+const wovenCoef = (i) => burst.summary.parts[i].mult * multZoneRatio(burst.children[i]);
+[1.5, 3, 4.5].forEach((want, i) =>
+  near(wovenCoef(i), want, `part ${i + 1} still computes to gcsim's coefficient`, 1e-6));
 // AND EACH PART REPORTS ITS OWN INDEX. The axis used to hand back the CLAMPED
 // table index, so a row with more children than the table has parts collapsed
 // onto the last one: `EntryGroup` matches a child to its figure by index, so the

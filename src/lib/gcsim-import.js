@@ -611,24 +611,47 @@ export function importGcsim({
     };
 
     /**
-     * The `scaling` a row or child carries so it reproduces gcsim's OWN number.
+     * The hit-count override a row or child carries, so it reproduces gcsim's own
+     * shape. `computePart` lets `scaling` WIN over the table. `null` when the
+     * table already agrees, so an ordinary row keeps a clean override set.
      *
-     * gcsim writes the multiplier it used (`calc.talent`) and logs one event per
-     * hit, neither of which the local talent table can express: 法尔伽's 狂飙突进
-     * runs at 220% of the table value, its C1 doubles 四风将起, and a multi-part
-     * skill fires several coefficients that must be kept apart. `computePart`
-     * lets `scaling` WIN over the table. `null` when the table already agrees,
-     * so an ordinary row keeps a clean override set.
+     * THE MULTIPLIER IS NOT HERE ANY MORE. gcsim's `calc.talent` is the EFFECTIVE
+     * coefficient -- it folds in whatever the run had active (法尔伽's 狂飙突进 at
+     * 220%, its C1 doubling 四风将起). Writing that absolute value over the table
+     * made the row immune to a later TALENT-LEVEL change, which is most of what a
+     * planner is for. The RATIO over the table's coefficient is carried instead,
+     * as a 倍率乘区 card (`multZoneDrop`), so the multiplier follows the level and
+     * the situational factor still rides on top.
      */
-    const scalingFor = (talent, count, localMult, localHits) => {
+    const scalingFor = (count, localHits) => {
       const s = {};
-      if (talent != null && Number.isFinite(talent) && localMult
-        && Math.abs(talent / localMult - 1) > 1e-6) {
-        s.mult = talent;
-      }
       if (count != null && localHits && count !== localHits) s.hits = count;
       return Object.keys(s).length ? s : null;
     };
+
+    /** gcsim's effective coefficient over the table's, or null when they agree. */
+    const multRatio = (talent, localMult) =>
+      (talent != null && Number.isFinite(talent) && localMult
+        && Math.abs(talent / localMult - 1) > 1e-6)
+        ? talent / localMult : null;
+
+    /**
+     * The 倍率乘区 card a hit carries when gcsim's coefficient differs from the
+     * table's -- its own drop, so the row reads `倍率乘区 x4.4` while the panel's
+     * multiplier stays the table's number. A FRESH source object per row: a drop
+     * is per-entry state, and sharing one would let an edit move another row.
+     */
+    const multZoneDrop = (ratio) => (ratio == null ? null : {
+      id: 'd-mult-zone',
+      source: {
+        kind: 'other',
+        icon: null,
+        iconKind: null,
+        libKey: 'mult-zone',
+        name: { chs: '倍率乘区', en: 'Multiplier Zone' },
+      },
+      buffs: [{ key: 'multZone', value: round6(ratio), tag: '' }],
+    });
 
     // SPLIT THE RUN BY THE PART EACH HIT IS.
     //
@@ -661,16 +684,20 @@ export function importGcsim({
     }));
 
     if (groups.length <= 1) {
-      // ONE NUMBER: the ordinary row, exactly as before -- plus a multiplier
-      // override only when gcsim's differs from the table's.
+      // ONE NUMBER: the ordinary row. A 附伤 row has no talent table behind it --
+      // its multiplier is an INPUT -- so it keeps gcsim's absolute coefficient;
+      // every other source carries the ratio as a 倍率乘区 card instead.
       const g = groups[0];
-      const scaling = scalingFor(g.talent, hits, stage.mult, stage.hits);
+      const scaling = scalingFor(hits, stage.hits) || {};
+      const ratio = multRatio(g.talent, stage.mult);
+      if (src.kind === 'flat' && ratio != null) scaling.mult = g.talent;
+      const zone = src.kind === 'flat' ? null : multZoneDrop(ratio);
       entries.push({
         id: nextId(),
         charId: idFor[ci].id,
         element: elementOf(g.ele || ele),
-        drops: attachCards(g.buffs, hits),
-        ...(scaling ? { scaling } : {}),
+        drops: [...attachCards(g.buffs, hits), ...(zone ? [zone] : [])],
+        ...(Object.keys(scaling).length ? { scaling } : {}),
         statOverrides: { ...enemyOverrides },
         critMode: critAll ? 'crit' : critNone ? 'never' : 'avg',
         picked: { sourceKey, stageIndex },
@@ -681,23 +708,29 @@ export function importGcsim({
     }
 
     const parentId = nextId();
+    // A part's multiplier is the TABLE's coefficient; gcsim's situational factor
+    // becomes a 倍率乘区 card on the child (see `multZoneDrop`), so the label and
+    // the child's own computation read the same number and both follow the level.
     const parts = groups.map((g, i) => ({
       partIndex: i,
-      mult: g.talent ?? stage.parts?.[i]?.mult ?? stage.mult,
+      mult: stage.parts?.[i]?.mult ?? stage.mult,
       hits: g.count,
     }));
     const children = groups.map((g, i) => {
       const localMult = stage.parts?.[i]?.mult ?? stage.mult;
       const localHits = stage.parts?.[i]?.hits ?? stage.hits;
-      const scaling = scalingFor(g.talent, g.count, localMult, localHits);
+      const scaling = scalingFor(g.count, localHits) || {};
+      const ratio = multRatio(g.talent, localMult);
+      if (src.kind === 'flat' && ratio != null) scaling.mult = g.talent;
+      const zone = src.kind === 'flat' ? null : multZoneDrop(ratio);
       const allCrit = g.crits.every(Boolean);
       const noneCrit = g.crits.every((c) => !c);
       return {
         id: `${parentId}-p${i}`,
         partIndex: i,
         element: elementOf(g.ele),
-        drops: attachCards(g.buffs, g.count),
-        ...(scaling ? { scaling } : {}),
+        drops: [...attachCards(g.buffs, g.count), ...(zone ? [zone] : [])],
+        ...(Object.keys(scaling).length ? { scaling } : {}),
         statOverrides: { ...enemyOverrides },
         critMode: allCrit ? 'crit' : noneCrit ? 'never' : 'avg',
         expanded: false,

@@ -27,7 +27,7 @@ import { derivePanel } from './stat-derive';
 import { buildSources } from '../char-sources';
 import { defaultStats, reactionByKey } from '../DamageCard';
 import {
-  foldDrops, foldZoneDrops, customZoneMultiplier, mergeStats,
+  foldDrops, foldZoneDrops, splitZoneFactors, mergeStats,
 } from '../components/buff-model';
 import { scopeForUnit } from './buff-formula';
 
@@ -112,12 +112,14 @@ function computePart({
   const activePart = (parts ? parts[idx] : null) || { mult: stage.mult, hits: stage.hits };
   if (!activePart) return null;
 
-  // AN IMPORTED ROW KNOWS ITS OWN NUMBERS. gcsim logs the exact multiplier it
-  // used and how many hits it rolled, which the local talent table cannot
-  // express -- 法尔伽's 狂飙突进 runs at 220% of the table value, its C1 doubles
-  // 四风将起, and a multi-part skill fires several coefficients that the row must
-  // keep apart. So an entry may carry `scaling`; when it does, it WINS, and the
-  // table is only the fallback for a row written by hand.
+  // AN IMPORTED ROW KNOWS ITS OWN NUMBERS. gcsim logs the exact hit count it
+  // rolled, which the local table cannot always express, so an entry may carry
+  // `scaling`; when it does it WINS and the table is the fallback for a row
+  // written by hand. The MULTIPLIER is the exception: a situational factor
+  // (法尔伽's 狂飙突进 at 220%, its C1 doubling 四风将起) arrives as a 倍率乘区 card
+  // and scales the COEFFICIENT below (`multZone`), so this stays the TABLE's and
+  // follows a talent-level change. Only a 附伤 row -- no table behind it -- keeps
+  // an absolute coefficient in `scaling.mult`.
   const partMult = multOverride != null ? multOverride : activePart.mult;
   const partHits = hitsOverride != null ? hitsOverride : activePart.hits;
 
@@ -129,7 +131,10 @@ function computePart({
   // editor and the collapsed row so a row, a card and the axis cannot disagree.
   const scopeOf = (d) => ctx.scopeByCharId.get(d?.source?.owner?.id);
   const { totals } = foldDrops(drops, scopeOf);
-  const zoneMult = customZoneMultiplier(foldZoneDrops(drops, scopeOf));
+  // THE ZONES SPLIT IN TWO (see `splitZoneFactors`): 倍率乘区 scales the hit's own
+  // COEFFICIENT, everything else stays one factor at the end.
+  const { mult: multZone, zone: zoneMult } =
+    splitZoneFactors(foldZoneDrops(drops, scopeOf));
 
   // The panel, with this part's own buffs folded in. The SAME merge the card uses,
   // so the row and the card cannot disagree.
@@ -144,6 +149,7 @@ function computePart({
     element: usedElement,
     critMode: critMode || 'avg',
     zoneMult,
+    multZone,
     atkLevel: Number(char?.level) || 90,
   });
 
