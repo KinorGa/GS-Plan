@@ -82,6 +82,31 @@ check('perHit is a number', /^-?[\d,]+(\.\d+)?$/.test(r.perHit), true);
 check('fields rendered', r.fields.length > 0, true);
 check('page errors', errs.length, 0);
 
+// The precision is a SETTING now (统一设置 -> 展示精度), so the strip must both
+// default to at most three decimals and follow the choice. The click is the part
+// a unit test cannot see: it proves the store re-rendered the card rather than
+// only the dialog that set it.
+const decimals = (s) => {
+  const m = String(s).match(/\.(\d+)/);
+  return m ? m[1].length : 0;
+};
+const worstDecimals = (strip) =>
+  Math.max(...Object.values(strip).map((cell) => decimals(cell.value)));
+
+check('default strip keeps at most 3 decimals', worstDecimals(r.strip) <= 3, true);
+
+await p.locator('[data-bulk-open]').click();
+await p.waitForTimeout(400);
+check('the bulk dialog offers the precision control',
+  await p.locator('[data-bulk-precision]').count(), 7);
+await p.locator('[data-bulk-precision="1"]').click();
+await p.waitForTimeout(300);
+await p.keyboard.press('Escape');
+await p.waitForTimeout(700);
+const r1 = await read();
+check('choosing 1 decimal caps the strip', worstDecimals(r1.strip) <= 1, true);
+check('settings still left no errors', errs.length, 0);
+
 await e1.screenshot({ path: 'tests/summary-precision.png' }).catch(() => {});
 await p.screenshot({ path: 'tests/summary-precision-full.png' });
 await browser.close(); chrome.kill(); await removeProfile(profile);

@@ -33,6 +33,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { STAT_DEFS } from '../DamageCard';
 import { iconImg, ICON_WHITE } from '../game';
+import {
+  MIN_DISPLAY_PRECISION,
+  MAX_DISPLAY_PRECISION,
+  setDisplayPrecision,
+  useDisplayPrecision,
+} from '../lib/display-prefs';
 
 const CRIT_MODES = [
   { k: 'never', chs: '不计暴击', en: 'No Crit' },
@@ -46,6 +52,14 @@ export default function BulkStatsDialog({ open, entryCount = 0, onCancel, onAppl
   const [enabled, setEnabled] = useState(() => ({}));
   const [values, setValues] = useState(() => ({}));
   const [critMode, setCritMode] = useState(null);
+
+  // 展示精度 is NOT one of the ticked fields. It describes the READOUT rather than
+  // the enemy or the hit, and it is not written to any entry -- so it is read and
+  // set straight from the shared store and applies on click, not through 应用.
+  // There is nothing to tick and nothing to undo, which is why it sits outside
+  // the grid above instead of beside those fields. It lives in THIS dialog
+  // because this is the app's one "set it once" panel.
+  const precision = useDisplayPrecision();
 
   // A FRESH DIALOG EACH TIME IT OPENS. Reopening after an apply must not carry
   // the last value as though it were still pending, and a stale tick would make
@@ -217,6 +231,43 @@ export default function BulkStatsDialog({ open, entryCount = 0, onCancel, onAppl
                 </div>
               );
             })}
+          </div>
+
+          {/* 展示精度 -- the one control here that is NOT written to the entries.
+              Kept clearly outside the ticked grid so it cannot be mistaken for a
+              field that would light up 应用. Each button is its own number, 0..6,
+              so the choice is one click rather than a stepper the user has to
+              count with. */}
+          <div className="mt-4 rounded-lg border border-white/10 bg-white/[0.02] p-3">
+            <p className="mb-1.5 text-[10px] uppercase tracking-wider text-white/30">
+              {L({ chs: '展示精度', en: 'Display precision' })}
+            </p>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {Array.from(
+                { length: MAX_DISPLAY_PRECISION - MIN_DISPLAY_PRECISION + 1 },
+                (_, i) => MIN_DISPLAY_PRECISION + i,
+              ).map((d) => (
+                <button
+                  key={d}
+                  data-bulk-precision={d}
+                  onClick={() => setDisplayPrecision(d)}
+                  className={
+                    'h-7 w-7 rounded-lg border text-[12px] font-semibold tabular-nums transition-colors '
+                    + (d === precision
+                      ? 'border-[#7fd4c1]/60 bg-[#7fd4c1]/20 text-white'
+                      : 'border-white/10 text-white/50 hover:text-white')
+                  }
+                >
+                  {d}
+                </button>
+              ))}
+              <span className="text-[10px] leading-snug text-white/40">
+                {L({
+                  chs: `面板最多保留 ${precision} 位小数（仅影响显示，不改动参与计算的值）`,
+                  en: `At most ${precision} decimals on the panels (display only; the values that compute are untouched)`,
+                })}
+              </span>
+            </div>
           </div>
         </div>
 

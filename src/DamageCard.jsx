@@ -14,6 +14,7 @@ import { foldBuffs, mergeStats } from './components/buff-model';
 import { computeDamage } from './lib/damage';
 import { DAMAGE_TYPES, KEY_SUFFIX, TYPE_ZH as ELEMENT_ZH } from './lib/elements';
 import { stageMultiplierText } from './char-sources';
+import { useDisplayPrecision, formatNumber } from './lib/display-prefs';
 
 // Default character the card falls back to. Kept in one place so the portrait
 // component gets exactly the fields it needs (element, weapon, names).
@@ -803,14 +804,17 @@ export default function DamageCard({
   }, [onSummary, source, stage, stageIdx, partIdx, parts, hitElementName, reaction, result, effectiveStage]);
 
   const n = (v) => Math.round(v).toLocaleString('en-US');
-  // ONE precision for the whole summary strip below. Rounding some cells and
-  // not others made the panel look like it followed two rules, and a total that
-  // read 17,841 could not be checked against the formula by hand. Three decimals
-  // is what the zone multipliers already used, so extending it to every cell
-  // fixes the inconsistency without coarsening anything: a total, a percentage
-  // and a multiplier now all read at the same precision.
-  const s3 = (v) =>
-    Number(v).toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  // ONE precision for the whole summary strip below, and it is now a SETTING
+  // (统一设置 -> 展示精度) rather than a hard-coded 3. Rounding some cells and not
+  // others made the panel look like it followed two rules, so every cell still
+  // goes through the one formatter -- it is just the same rule the strip, the
+  // card's buff marks and a zone label all share, because they read one store.
+  //
+  // THE NUMBERS ARE NOT TOUCHED. This rounds the PRINT only; the value the next
+  // step multiplies is still the full-precision one. `useDisplayPrecision` is
+  // what makes the card re-render when the setting moves.
+  const digits = useDisplayPrecision();
+  const fmt = (v) => formatNumber(v, digits);
   // `source.element` can be undefined, and `elementOf` above tolerates that (it
   // falls back to a grey "unknown" glyph internally) while the `toLowerCase`
   // below did NOT -- the card crashed with "Cannot read properties of undefined
@@ -1104,20 +1108,20 @@ export default function DamageCard({
 
         {/* Live intermediate results - pinned below the scrolling field list */}
         <div className="mt-3 grid shrink-0 grid-cols-3 gap-1.5 border-t border-white/5 pt-3 xl:grid-cols-5">
-          <Mini stat="totalHp" label={L({ chs: '总生命', en: 'Total HP' })} value={s3(result.totalHp)} />
-          <Mini stat="totalAtk" label={L({ chs: '总攻击', en: 'Total ATK' })} value={s3(result.totalAtk)} />
-          <Mini stat="totalDef" label={L({ chs: '总防御', en: 'Total DEF' })} value={s3(result.totalDef)} />
-          <Mini stat="talent" label={L({ chs: '天赋倍率', en: 'Talent' })} value={`${s3(result.talent * 100)}%`} />
+          <Mini stat="totalHp" label={L({ chs: '总生命', en: 'Total HP' })} value={fmt(result.totalHp)} />
+          <Mini stat="totalAtk" label={L({ chs: '总攻击', en: 'Total ATK' })} value={fmt(result.totalAtk)} />
+          <Mini stat="totalDef" label={L({ chs: '总防御', en: 'Total DEF' })} value={fmt(result.totalDef)} />
+          <Mini stat="talent" label={L({ chs: '天赋倍率', en: 'Talent' })} value={`${fmt(result.talent * 100)}%`} />
           <Mini
             stat="reaction"
             label={L({ chs: '反应增幅', en: 'Reaction' })}
-            value={reaction.amp ? `x${s3(result.reactMult)}` : '—'}
+            value={reaction.amp ? `x${fmt(result.reactMult)}` : '—'}
           />
-          <Mini stat="crit" label={L({ chs: '暴伤区', en: 'Crit DMG Zone' })} value={`x${s3(result.critMult)}`} />
-          <Mini stat="dmgBonus" label={L({ chs: '伤害加成', en: 'DMG Bonus' })} value={`${s3(result.bonusPct)}%`} />
-          <Mini stat="defZone" label={L({ chs: '防御区', en: 'DEF Zone' })} value={`x${s3(result.defMult)}`} />
-          <Mini stat="resZone" label={L({ chs: '抗性区', en: 'RES Zone' })} value={`x${s3(result.resMult)}`} />
-          <Mini stat="er" label={L({ chs: '充能效率', en: 'Energy Rech.' })} value={`${s3(result.er)}%`} />
+          <Mini stat="crit" label={L({ chs: '暴伤区', en: 'Crit DMG Zone' })} value={`x${fmt(result.critMult)}`} />
+          <Mini stat="dmgBonus" label={L({ chs: '伤害加成', en: 'DMG Bonus' })} value={`${fmt(result.bonusPct)}%`} />
+          <Mini stat="defZone" label={L({ chs: '防御区', en: 'DEF Zone' })} value={`x${fmt(result.defMult)}`} />
+          <Mini stat="resZone" label={L({ chs: '抗性区', en: 'RES Zone' })} value={`x${fmt(result.resMult)}`} />
+          <Mini stat="er" label={L({ chs: '充能效率', en: 'Energy Rech.' })} value={`${fmt(result.er)}%`} />
         </div>
 
         <div className="mt-2.5 flex shrink-0 flex-wrap gap-1.5">
@@ -1416,7 +1420,7 @@ function StatField({ def, label, value, onChange, injected = 0, isOverridden = f
             className="ml-auto shrink-0 font-bold text-[#7fd4c1]"
             title="来自拖入的增益"
           >
-            +{injected}
+            +{formatNumber(injected)}
             {def.suffix}
           </span>
         )}

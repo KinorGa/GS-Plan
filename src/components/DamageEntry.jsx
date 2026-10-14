@@ -32,6 +32,7 @@ import {
   buffsToText,
 } from './buff-model';
 import { readClipboard, writeClipboard, subscribeClipboard, clipboardRowCount } from '../lib/buff-clipboard';
+import { useDisplayPrecision, formatNumber } from '../lib/display-prefs';
 import { ElementPicker } from './ElementGlyph';
 import EntryNote from './EntryNote';
 import { ElementGlyph } from './ElementGlyph';
@@ -115,6 +116,12 @@ function DamageEntry({
   cardOnly = false,
 }) {
   const { lang, L } = useI18n();
+
+  // The row is `memo`d, so it would not otherwise re-render when the display
+  // precision moves in 统一设置. Subscribing here is what keeps the buff chips
+  // and the zone labels below at the precision the user chose -- the chip and
+  // the card read the same store, so they cannot print different digits.
+  const digits = useDisplayPrecision();
 
   const [over, setOver] = useState(false);
   const [charData, setCharData] = useState(null);
@@ -1048,7 +1055,7 @@ function DamageEntry({
               title={s.count > 1 ? `×${s.count}` : undefined}
               className="rounded border border-[#7fd4c1]/30 bg-[#7fd4c1]/10 px-1.5 py-0.5 text-[9px] font-medium text-[#7fd4c1]"
             >
-              {L(meta)} +{s.value}{meta.suffix || ''}
+              {L(meta)} +{formatNumber(s.value, digits)}{meta.suffix || ''}
             </span>
           );
         })}
@@ -1064,8 +1071,8 @@ function DamageEntry({
           <span
             key={`zone-${z.name}`}
             title={L({
-              chs: `${z.raw ? '直接倍数乘区' : '独立乘区（同名相加）'}：×${zoneFactor(z).toFixed(4)}${z.count > 1 ? `，来自 ${z.count} 张卡` : ''}`,
-              en: `${z.raw ? 'Direct multiplier zone' : 'Independent multiplier zone (same name adds)'}: x${zoneFactor(z).toFixed(4)}${z.count > 1 ? `, from ${z.count} cards` : ''}`,
+              chs: `${z.raw ? '直接倍数乘区' : '独立乘区（同名相加）'}：×${formatNumber(zoneFactor(z), digits)}${z.count > 1 ? `，来自 ${z.count} 张卡` : ''}`,
+              en: `${z.raw ? 'Direct multiplier zone' : 'Independent multiplier zone (same name adds)'}: x${formatNumber(zoneFactor(z), digits)}${z.count > 1 ? `, from ${z.count} cards` : ''}`,
             })}
             className="rounded border border-amber-400/40 bg-amber-400/10 px-1.5 py-0.5 text-[9px] font-medium text-amber-300"
           >

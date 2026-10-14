@@ -17,6 +17,7 @@
 
 import { DAMAGE_TYPES, KEY_SUFFIX } from '../lib/elements';
 import { resolve } from '../lib/buff-formula';
+import { formatNumber } from '../lib/display-prefs';
 
 // The stat labels live in a LEAF module, and are re-exported here so every
 // existing `import { STAT_META } from './buff-model'` keeps working.
@@ -234,9 +235,17 @@ export function zoneFactor(z) {
   return z.raw ? z.value : 1 + z.value / 100;
 }
 
-/** The factor above, formatted for display (3 decimals, as the chip has always shown). */
+/**
+ * The factor above, formatted for display.
+ *
+ * The decimals come from the shared display preference (统一设置 -> 展示精度),
+ * NOT a fixed 3. Everything that writes a zone factor -- this chip, the entry
+ * chip's tooltip, the copied text -- goes through `formatNumber`, so they cannot
+ * drift apart the way two hand-written `toFixed` calls once did. A raw zone
+ * (大权) stays bare: `×2` is the number itself, not a percentage to round.
+ */
 export function zoneFactorLabel(z) {
-  return z.raw ? `${z.value}` : zoneFactor(z).toFixed(3);
+  return z.raw ? `${z.value}` : formatNumber(zoneFactor(z));
 }
 
 /* ------------------------------------------------- copying a row's buffs */
