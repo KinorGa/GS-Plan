@@ -277,7 +277,7 @@ export default function AxisSummary({ entries, axis, team, L }) {
           onHover={setHover}
           title={L({ chs: '角色占比', en: 'By character' })}
           tone="teal"
-          size={124}
+          size={156}
           L={L}
         />
         <Donut
@@ -287,13 +287,13 @@ export default function AxisSummary({ entries, axis, team, L }) {
           onHover={setHover}
           title={L({ chs: '元素占比', en: 'By element' })}
           tone="amber"
-          size={124}
+          size={156}
           L={L}
         />
 
         {/* THE LEGENDS, side by side with their charts so a slice is never hunted
             for. Hovering either the slice or its legend row highlights both. */}
-        {/* THE LEGENDS TAKE THEIR OWN ROW ON A NARROW SCREEN. Beside two 124px
+        {/* THE LEGENDS TAKE THEIR OWN ROW ON A NARROW SCREEN. Beside two 156px
             rings, the `flex-1` column was left ~110px wide -- narrower than one
             legend row's own fixed parts -- so the labels and figures spilled past
             the page edge. `basis-full` wraps them onto a full-width line below
@@ -383,7 +383,7 @@ export default function AxisSummary({ entries, axis, team, L }) {
                 onHover={setHover}
                 title=""
                 tone="amber"
-                size={84}
+                size={112}
                 L={L}
               />
             )}
@@ -394,7 +394,7 @@ export default function AxisSummary({ entries, axis, team, L }) {
               onHover={setHover}
               title=""
               tone="violet"
-              size={84}
+              size={112}
               L={L}
             />
 
@@ -452,6 +452,18 @@ const RAMP = {
   // must not read as the same series.
   violet: ['#c08fff', '#7fd4c1', '#f0b429', '#8fa6ff', '#e0729a', '#9ae06a'],
 };
+
+/**
+ * The dark plate a slice's own glyph sits on, in px -- a CEILING, not a size.
+ *
+ * The glyphs are drawn at 16px everywhere in the app (the legend here, the damage
+ * cards, the source picker), so the plate exists to hold one of those and has no
+ * reason to grow past it: at 0.17 * size the team rings' marks went to 26px when
+ * the rings were enlarged, and a fixed 16px icon on a 26px disc read as a smudge
+ * floating in a blob rather than as a labelled slice. The per-slice cap below
+ * still shrinks a mark on a thin arc; this one only stops it growing.
+ */
+const MARK_PLATE = 20;
 
 /**
  * A donut chart, drawn as SVG arcs.
@@ -557,14 +569,15 @@ function Donut({ rows, total, hover, onHover, title, tone, size = 120, L }) {
           /**
            * THE ICON IS CAPPED BY ITS ARC'S OWN LENGTH, not by a fraction of the
            * ring. `(pct/100) * c` is the arc's length in px, and the glyph must fit
-           * inside it or it overhangs its neighbours -- measured, a 12.8% slice on
-           * an 84px ring gave a 14px icon on a 34px arc, and the two smallest
-           * slices' marks visibly overlapped the ones beside them.
+           * inside it or it overhangs its neighbours -- measured on the 84px ring
+           * the panel started with, a 12.8% slice gave a 14px icon on a 34px arc,
+           * and the two smallest slices' marks visibly overlapped their neighbours.
            *
-           * The 0.62 factor leaves a gap between adjacent marks.
+           * The 0.62 factor leaves a gap between adjacent marks, and MARK_PLATE
+           * keeps a mark from outgrowing the glyph it holds. See above.
            */
           const arcLen = (row.pct / 100) * c;
-          const iconSize = Math.min(size * 0.17, arcLen * 0.62);
+          const iconSize = Math.min(size * 0.17, arcLen * 0.62, MARK_PLATE);
           // Below ~9px the glyph is illegible and the mark is just a smudge on the
           // arc, so a thin slice gets none and is read from its legend row.
           const fits = iconSize >= 9;
