@@ -39,35 +39,57 @@ export function invalidateArtifacts() {
  */
 export function loadArtifacts(lang = 'chs') {
   return cache.get(lang, async () => {
-    const list = await fetchJsonOrThrow('/data/artifactlist.json');
+    const index = await fetchJsonOrThrow('/data/artifactlist.json');
 
-    const ids = Object.keys(list);
-    const details = await Promise.all(
+    const ids = Object.keys(index);
+    const fetched = await Promise.all(
       ids.map((id) => fetchJson(`/data/artifact/${lang}/${id}.json`))
     );
+    const details = Object.fromEntries(ids.map((id, i) => [id, fetched[i]]));
 
-    /** setId -> { id, chsName, enName, qualityType, setIcon, pieces, bonuses } */
-    const sets = {};
-    ids.forEach((id, i) => {
-      const meta = list[id];
-      const d = details[i];
-      const pieces = {};
-      for (const [slot, p] of Object.entries(d?.info?.pieces || {})) {
-        pieces[slot] = { icon: p.icon, name: p.name };
-      }
-      sets[id] = {
-        id,
-        chsName: meta.chsName,
-        enName: meta.enName,
-        qualityType: meta.qualityType,
-        setIcon: meta.setIcon,
-        pieces,
-        bonuses: d?.info?.setBonuses || null,
-      };
-    });
-
-    return { sets, list: displayOrder(sets) };
+    return indexArtifacts(index, details);
   });
+}
+
+/**
+ * The catalogue from its two raw sources: `artifactlist.json`, and one detail
+ * file per set, both as fetched.
+ *
+ * SEPARATE FROM THE FETCH so a consumer that already HAS the two files can build
+ * the same `{ sets, list }` without a network -- which is what the artifact-scan
+ * check does, reading the real catalogue off disk so its set matching is verified
+ * against the 66 names the app actually ships rather than against a fixture that
+ * happens to agree with the code.
+ *
+ * A set with no detail file (9 pieces are absent upstream) still comes back: the
+ * index carries its name, rarity and emblem, so it stays pickable and `pieceIcon`
+ * falls back to that emblem.
+ *
+ * @param   {object} index    setId -> { chsName, enName, qualityType, setIcon }
+ * @param   {object} details  setId -> a detail file, or nothing for that set
+ * @returns {{ sets: object, list: object[] }}
+ */
+export function indexArtifacts(index, details = {}) {
+  /** setId -> { id, chsName, enName, qualityType, setIcon, pieces, bonuses } */
+  const sets = {};
+  for (const id of Object.keys(index)) {
+    const meta = index[id];
+    const detail = details[id];
+    const pieces = {};
+    for (const [slot, p] of Object.entries(detail?.info?.pieces || {})) {
+      pieces[slot] = { icon: p.icon, name: p.name };
+    }
+    sets[id] = {
+      id,
+      chsName: meta.chsName,
+      enName: meta.enName,
+      qualityType: meta.qualityType,
+      setIcon: meta.setIcon,
+      pieces,
+      bonuses: detail?.info?.setBonuses || null,
+    };
+  }
+  return { sets, list: displayOrder(sets) };
 }
 
 /**

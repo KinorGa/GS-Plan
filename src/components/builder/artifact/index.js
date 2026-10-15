@@ -10,6 +10,7 @@
 //   StatGlyph         a stat's glyph, and the popover that picks one
 //   SetPicker         the modal grid of every set
 //   BonusChips        the derived 2-piece / 4-piece readout
+//   ArtifactScan      a screenshot read into the row, with a review step
 //
 // The domain side is `lib/artifact` (see that barrel), which splits further
 // into the rules, the presentation metadata and the catalogue loader.

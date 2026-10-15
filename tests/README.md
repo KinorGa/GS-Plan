@@ -41,6 +41,10 @@ A check that needs something not in the repo skips, loudly, with the command
 that would provide it -- it never silently passes:
 
 - `check-derive-precise.mjs` needs `public/data/char/**`, i.e. `npm run fetch`.
+- `check-artifact-scan-screen.mjs` and `check-artifact-scan-panel.mjs` need
+  `public/data/artifactlist.json` -- the real 66-set catalogue is what they check
+  the scan's set matching and its end-to-end UI against, so a fixture would defeat
+  both. `npm run fetch`.
 - The `data/*.json` configs several checks read are personal exports; on a fresh
   clone those checks skip.
 

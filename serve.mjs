@@ -5,6 +5,11 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+// The two rules the page also needs: what a Base URL means, and what the key's
+// variable is called when nobody names one. Imported rather than copied, so
+// `/api/vision` and a direct call cannot disagree about either. That module has no
+// imports of its own, which is what lets a Node server load it at all.
+import { chatCompletionsUrl, DEFAULT_KEY_ENV } from './src/lib/vision-client.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, 'dist');
@@ -87,6 +92,108 @@ function writeDataFile(text) {
   fs.renameSync(tmp, DATA_FILE);
 }
 
+/**
+ * The NAME of the environment variable that holds the key.
+ *
+ * The body names it; the body never carries the key. Anything that could not be an
+ * environment variable is refused rather than looked up, so a request cannot ask
+ * this server to read some other thing out of its own environment and forward it.
+ */
+function keyEnvName(keyEnv) {
+  const name = String(keyEnv || '').trim() || DEFAULT_KEY_ENV;
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) throw new Error(`环境变量名不合法：${name}`);
+  return name;
+}
+
+/**
+ * Whether this process can see the key: the whole of `GET /api/vision`.
+ *
+ * Presence only, never the value. The point of the name-not-the-key change is that
+ * the secret stops travelling through things that can leak it, and sending it back
+ * down an HTTP response would undo exactly that.
+ */
+function probeKeyEnv(keyEnv) {
+  const name = keyEnvName(keyEnv);
+  return { ok: true, keyEnv: name, keyPresent: !!process.env[name] };
+}
+
+/**
+ * Forward ONE image to a vision model and return its text.
+ *
+ * WHY THIS ENDPOINT EXISTS AT ALL. OpenAI-compatible endpoints do not answer a
+ * browser's preflight -- a key in a page is a key anyone can lift -- so a direct
+ * `fetch` from the app never reaches the model. The request has to leave from a
+ * process that is not a page, and this server already is one.
+ *
+ * THE PROVIDER IS THE USER'S, so this is a relay and not an integration: any
+ * `/chat/completions` works, including a local model that no hosted service could
+ * reach. The key comes from THIS process's environment, under the name the page
+ * gave (`USTC_API_KEY` by default), and is neither written to `data/` nor logged.
+ *
+ * A MISSING VARIABLE IS NOT AN ERROR. The page always names one, and a local model
+ * needs none -- so an unset variable means "send no `Authorization` header", and
+ * the reason is printed in this terminal, which is where the variable should have
+ * been set. A hosted provider then answers `401` in its own words, as before.
+ *
+ * The request body is the OpenAI vision format: one user message holding a text
+ * part and an image part. `temperature: 0` because reading a screenshot has one
+ * right answer. The timeout is generous -- a slow local model on a 1600px
+ * screenshot is minutes, not seconds.
+ */
+async function relayVision({ baseUrl, keyEnv, model, image, prompt }) {
+  if (!model) throw new Error('model is required');
+  if (!image) throw new Error('image is required');
+  const url = chatCompletionsUrl(baseUrl);
+  const name = keyEnvName(keyEnv);
+  const key = process.env[name] || '';
+  if (!key) {
+    console.warn(`[vision] 环境变量 ${name} 没读到：本次不带 Authorization 头`
+      + '（本地模型不需要 Key；托管接口请在启动本服务的终端里设置它，然后重启）');
+  }
+
+  let upstream;
+  try {
+    upstream = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(key ? { Authorization: `Bearer ${key}` } : {}),
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0,
+        max_tokens: 2048,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'text', text: String(prompt || '') },
+            { type: 'image_url', image_url: { url: String(image) } },
+          ],
+        }],
+      }),
+      signal: AbortSignal.timeout(180000),
+    });
+  } catch (e) {
+    // A DNS/TLS/timeout failure. Named here rather than left to the page, which
+    // can only say "the relay failed".
+    throw new Error(`cannot reach ${url}: ${e.message || e}`);
+  }
+
+  const raw = await upstream.text();
+  let payload = null;
+  try { payload = JSON.parse(raw); } catch { /* the messages below report `raw` */ }
+
+  if (!upstream.ok) {
+    const detail = payload?.error?.message || payload?.error
+      || raw.slice(0, 300) || upstream.statusText;
+    throw new Error(`${upstream.status} ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`);
+  }
+
+  const text = payload?.choices?.[0]?.message?.content;
+  if (typeof text !== 'string') throw new Error('the reply had no choices[0].message.content');
+  return { text, model: payload?.model || model };
+}
+
 http
   .createServer((req, res) => {
     let urlPath;
@@ -158,6 +265,63 @@ http
       }
 
       res.writeHead(405).end('GET or PUT');
+      return;
+    }
+
+    /**
+     * THE VISION RELAY. See `relayVision` above for why the hop is needed.
+     *
+     *   GET  /api/vision?keyEnv=USTC_API_KEY -> { ok, keyEnv, keyPresent }
+     *   POST /api/vision  { baseUrl, keyEnv, model, image, prompt } -> { text }
+     *
+     * The GET is the panel asking about its own setup -- "can you see the
+     * variable?" -- before a screenshot is sent, so that a forgotten `$env:` shows
+     * up as a line in the form instead of as a 401 from three hops away.
+     *
+     * The upstream's status is passed through as 502 rather than as its own code:
+     * a 401 from the model is not a 401 from THIS server, and a page that saw one
+     * might reasonably try to authenticate against it. The message carries the
+     * upstream's own wording, which is the part worth reading.
+     */
+    if (urlPath === '/api/vision') {
+      if (req.method === 'GET') {
+        let probe;
+        try {
+          probe = probeKeyEnv(new URL(req.url, 'http://x').searchParams.get('keyEnv'));
+        } catch (e) {
+          res.writeHead(400, { 'Content-Type': MIME['.json'] });
+          res.end(JSON.stringify({ error: String(e?.message || e) }));
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': MIME['.json'], 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify(probe));
+        return;
+      }
+      if (req.method !== 'POST') {
+        res.writeHead(405).end('GET or POST');
+        return;
+      }
+      readBody(req).then(async (body) => {
+        let parsed;
+        try {
+          parsed = JSON.parse(body);
+        } catch {
+          res.writeHead(400, { 'Content-Type': MIME['.json'] });
+          res.end(JSON.stringify({ error: 'body is not JSON' }));
+          return;
+        }
+        try {
+          const out = await relayVision(parsed);
+          res.writeHead(200, { 'Content-Type': MIME['.json'], 'Cache-Control': 'no-store' });
+          res.end(JSON.stringify(out));
+        } catch (e) {
+          res.writeHead(502, { 'Content-Type': MIME['.json'] });
+          res.end(JSON.stringify({ error: String(e?.message || e) }));
+        }
+      }).catch((e) => {
+        res.writeHead(e.message === 'body too large' ? 413 : 400);
+        res.end(String(e.message || e));
+      });
       return;
     }
 

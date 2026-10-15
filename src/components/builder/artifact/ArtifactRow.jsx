@@ -10,6 +10,7 @@ import PieceSlot from './PieceSlot';
 import BonusChips from './BonusChips';
 import ArtifactSetTabs from './ArtifactSetTabs';
 import ArtifactTotals from './ArtifactTotals';
+import ArtifactScan from './ArtifactScan';
 
 /**
  * Five artifact slots, each configured independently.
@@ -27,7 +28,7 @@ import ArtifactTotals from './ArtifactTotals';
  */
 export default function ArtifactRow({ value, onChange, onRemove }) {
   const { lang, L } = useI18n();
-  const { sets, error, retry, loading } = useArtifacts(lang);
+  const { sets, list, error, retry, loading } = useArtifacts(lang);
 
   // One normalisation at the boundary: everything below this line deals with a
   // container, and `activeArtifacts` resolves which build is in use.
@@ -121,6 +122,17 @@ export default function ArtifactRow({ value, onChange, onRemove }) {
             />
           ))}
           <ArtifactTotals build={build} />
+          {/* READ A SCREENSHOT INTO THE ROW. Last in the flex track, in the empty
+              width the totals panel leaves: the row is where a build is entered,
+              and entering one by eye off a screenshot is the slow path. It writes
+              through the same `onChange` the slots do, so a scanned piece is
+              indistinguishable from a hand-entered one afterwards. */}
+          <ArtifactScan
+            build={build}
+            sets={sets}
+            list={list}
+            onApply={(next) => onChange(setArtifactSlots(artifacts, artifacts.active, next))}
+          />
         </div>
       )}
     </div>

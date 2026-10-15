@@ -38,6 +38,8 @@ const SERVER = 'http://127.0.0.1:5199/';
  * grows a new fixture, add it here and the skip message stays honest.
  */
 const FIXTURES = {
+  'check-artifact-scan-screen.mjs': ['public/data/artifactlist.json'],
+  'check-artifact-scan-panel.mjs': ['public/data/artifactlist.json', 'tests/entry-note.png'],
   'check-child-notes.mjs': ['data/法布尼-ft.json'],
   'check-derive-precise.mjs': ['public/data/char/chs/10000343.json'],
   'check-crit-flow.mjs': ['data/lunaris-config-2026-10-07.json'],

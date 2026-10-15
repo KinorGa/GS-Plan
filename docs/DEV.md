@@ -97,6 +97,8 @@ README 只讲规划器（`planner.html`）；这份文档讲**整个仓库里都
   - `ArtifactRow.jsx` / `PieceSlot.jsx` — 部位槽与整行。
   - `ArtifactSetTabs.jsx` — **多套圣遗物配置**的切换页签。
   - `ArtifactTotals.jsx` — 词条合计。
+  - `ArtifactScan.jsx` — **识图导入**：截图 → 一次模型请求 → 逐件校对 → 勾选后写入当前配置。
+    面板挂在行最右端（词条合计之后那块空宽度），校对弹窗用 `PickerModal`。
   - `BonusChips.jsx` / `MainStatControl.jsx` / `SetPicker.jsx` / `StatGlyph.jsx` — 套装/主词条/图标。
   - `SubstatsControl.jsx` / `SubstatValue.jsx` — 副词条编辑；合法取值来自 `lib/substat-rolls.js`。
 
@@ -116,6 +118,18 @@ README 只讲规划器（`planner.html`）；这份文档讲**整个仓库里都
   - `artifact-model.js`/`artifact-curves.js`/`artifact-sets.js`/`artifact-catalogue.js`/`artifact-meta.js`/`artifact.js` — 圣遗物模型、词条曲线、套装、目录、元数据。
   - `substat-rolls.js` — 副词条合法取值（高精度，按强化次数 N 分组）。
   - `elements.js` — `DAMAGE_TYPES`/`KEY_SUFFIX`。
+- **识图（截图 → 圣遗物）**
+  - `artifact-scan.js` — 纯函数：提示词、模型返回的容错解析，以及**「图上的字 → 本项目的 key」**的映射
+    （部位 / 词条 / 套装）。模型只被要求抄写屏幕上的原文（`攻击力 7.0%`），翻译在这里做，
+    所以有一张表可以被测试读、也能被用户在校对表里逐行核对。两条最容易写错的规则写在文件头：
+    副词条**按游戏显示值**比较合法性（`攻击力+19` 其实是 19.45），主词条的固定值/百分比**由部位判定**
+    （详情面板自己的标题行不写 `%`）。
+  - `vision-client.js` — 一次请求：先走本项目 `/api/vision` 转发（OpenAI 兼容接口不给浏览器 CORS），
+    没有转发时直连模型（本地模型可以，且不带 Key）。请求体里只有**环境变量名**，密钥从头到尾不在页面上；
+    `probeKeyEnv` 问转发服务「读得到这个变量吗」，面板把答案印在输入框下面。**自身没有 import**，
+    因为 `serve.mjs` 也引它（共享 URL 规则与默认变量名 `USTC_API_KEY`）。
+  - `vision-config.js` — Base URL / **Key 环境变量名** / Model 的 localStorage 读写；浏览器里没有密钥
+    （旧版存下的 `key` 不再被读取），Key 也不进仓库、不进 `data/`。
 - **增益数据**
   - `buff-library.js`、`buff-flags.js`、`buff-instances.js`、`buff-sources.js`、`pool-view.js`。
 - **剪贴板**
