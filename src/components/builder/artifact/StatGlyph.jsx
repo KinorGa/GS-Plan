@@ -60,8 +60,14 @@ export function StatGlyph({ stat, size = 16 }) {
  * @param {Function} onPick
  * @param {Function} [onClear]  Omitted where "no stat" is not a valid state.
  * @param {Function} [onClose]  Called when the menu should dismiss itself.
+ * @param {string}   [zIndex]   The stack level to sit at. The default clears the
+ *                              artifact row; a caller opening the menu from inside
+ *                              a DIALOG has to go one step higher, or the dialog's
+ *                              own layer swallows every click on it -- the menu is
+ *                              portalled to the body, so it shares no stacking
+ *                              context with the control that opened it.
  */
-export function StatMenu({ anchor, options, value, onPick, onClear, onClose }) {
+export function StatMenu({ anchor, options, value, onPick, onClear, onClose, zIndex = 'z-[70]' }) {
   const { L } = useI18n();
   const menuRef = useRef(null);
   const [rect, setRect] = useState(null);
@@ -124,7 +130,7 @@ export function StatMenu({ anchor, options, value, onPick, onClear, onClose }) {
       ref={menuRef}
       data-stat-menu
       style={{ position: 'fixed', left: rect.left, top: rect.top }}
-      className="z-[70] w-max rounded-xl border border-white/10 bg-[#141418] p-2 shadow-2xl shadow-black/80"
+      className={zIndex + ' w-max rounded-xl border border-white/10 bg-[#141418] p-2 shadow-2xl shadow-black/80'}
     >
       <div className="grid grid-cols-7 gap-1">
         {options.map((k) => {

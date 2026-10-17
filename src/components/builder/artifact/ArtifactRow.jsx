@@ -11,6 +11,7 @@ import BonusChips from './BonusChips';
 import ArtifactSetTabs from './ArtifactSetTabs';
 import ArtifactTotals from './ArtifactTotals';
 import ArtifactScan from './ArtifactScan';
+import ArtifactOptimize from './ArtifactOptimize';
 
 /**
  * Five artifact slots, each configured independently.
@@ -25,8 +26,15 @@ import ArtifactScan from './ArtifactScan';
  *                              so a caller holding an old shape still works.
  * @param {Function} onChange    Called with a whole new CONTAINER.
  * @param {Function} [onRemove]  Omit to hide the remove control.
+ * @param {string}   [charId]    Whose build this is. The optimiser is per
+ *                              character (artifacts only move their owner's
+ *                              damage), and it needs the id to find that
+ *                              character's damage entries.
+ * @param {object}   [optimize]  `{ entries, team, catalogue, talentDamage }` --
+ *                              what the optimiser merges. Omitted by a caller
+ *                              that has no axis in hand, which hides the button.
  */
-export default function ArtifactRow({ value, onChange, onRemove }) {
+export default function ArtifactRow({ value, onChange, onRemove, charId, optimize }) {
   const { lang, L } = useI18n();
   const { sets, list, error, retry, loading } = useArtifacts(lang);
 
@@ -71,15 +79,24 @@ export default function ArtifactRow({ value, onChange, onRemove }) {
 
         <BonusChips bonuses={bonuses} sets={sets} />
 
-        {onRemove && (
-          <button
-            type="button"
-            onClick={onRemove}
-            className="ml-auto rounded px-1 text-[11px] text-white/25 transition-colors hover:text-white/80"
-          >
-            ✕
-          </button>
-        )}
+        {/* THE OPTIMISER, beside the remove control because both act on the whole
+            configuration rather than on one slot. It is the one place in the row
+            that asks a question about the FUTURE of the build -- "which substat
+            allocation is best" -- rather than about what is on the pieces.
+            They share one right-aligned cluster so the chips keep the left and
+            the controls keep the right, whichever of the two is present. */}
+        <div className="ml-auto flex items-center gap-1.5">
+          <ArtifactOptimize charId={charId} build={build} optimize={optimize} />
+          {onRemove && (
+            <button
+              type="button"
+              onClick={onRemove}
+              className="rounded px-1 text-[11px] text-white/25 transition-colors hover:text-white/80"
+            >
+              ✕
+            </button>
+          )}
+        </div>
       </div>
 
       {/* THE CONFIGURATIONS, on their own line under the panel title: they name

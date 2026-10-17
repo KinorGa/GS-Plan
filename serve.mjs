@@ -1,9 +1,12 @@
 // Static file server for the built site (./dist).
-// Uses only Node core modules, so it runs anywhere - including sandboxes that
-// restrict child processes.
+// Uses only Node core modules. One route (`/api/optimize`) SPAWNS a compiled
+// helper, which is the single reason this is not purely a static server -- see
+// `runOptimizer` for why the search cannot live in the page.
 import http from 'node:http';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 // The two rules the page also needs: what a Base URL means, and what the key's
 // variable is called when nobody names one. Imported rather than copied, so
@@ -31,6 +34,16 @@ const PORT = Number(process.env.PORT || 5199);
  */
 const DATA_DIR = path.join(HERE, 'data', 'config');
 const DATA_FILE = path.join(DATA_DIR, 'buff-library.json');
+
+/**
+ * THE ARTIFACT OPTIMISER BINARY.
+ *
+ * Built from `native/optimize/main.cpp`; see the README beside it. It is NOT
+ * committed -- it is a build output -- so a checkout that has never run the
+ * build has no binary, and `/api/optimize` says so with the command to run
+ * rather than failing as an unexplained 500.
+ */
+const OPTIMIZE_EXE = path.join(HERE, 'native', 'optimize', 'optimize.exe');
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -194,6 +207,71 @@ async function relayVision({ baseUrl, keyEnv, model, image, prompt }) {
   return { text, model: payload?.model || model };
 }
 
+/** A `-status` error, so the route can pass a code through instead of guessing. */
+function httpError(status, message) {
+  const e = new Error(message);
+  e.status = status;
+  return e;
+}
+
+/**
+ * Run the artifact optimiser on one problem, and return its CSV.
+ *
+ * WHY A SUBPROCESS. The search is over how each of the five pieces spends its
+ * rolls -- four distinct lines to a piece, at least one roll on each, a per-line
+ * cap. A realistic build is tens of thousands of distinct outcomes, and letting
+ * every substat be optional everywhere is hundreds of millions. It is a tight
+ * numeric loop and nothing a page can do quickly -- which is why it is a small
+ * C++ program with no dependencies rather than a second implementation in the
+ * bundle.
+ *
+ * THE PROBLEM GOES THROUGH A FILE, not a pipe or argv: it carries sixteen
+ * coefficients per crit group and can be several KB, and the program's reader is
+ * `ifstream` on a path. Written into a fresh temp directory so two requests
+ * cannot see each other's file.
+ *
+ * A missing binary is `501` and names the build command: it is a checkout that
+ * has never been built, not a server fault, and the fix is one line the user can
+ * run.
+ */
+function runOptimizer(problem) {
+  return new Promise((resolve, reject) => {
+    if (!fs.existsSync(OPTIMIZE_EXE)) {
+      reject(httpError(501,
+        '优化器还没编译：先运行 native/optimize/build.bat（或 g++ -O2 -std=c++17 -o optimize.exe main.cpp），然后重试'));
+      return;
+    }
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsplan-opt-'));
+    const file = path.join(dir, 'problem.txt');
+    fs.writeFileSync(file, problem, 'utf8');
+    const cleanup = () => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ } };
+
+    const child = spawn(OPTIMIZE_EXE, [file, '--threads', String(Math.max(1, os.cpus().length))]);
+    let out = '';
+    let err = '';
+    // A runaway search must not hold the request open forever; the result so far
+    // is discarded rather than half-returned, because a truncated CSV parses as
+    // a complete-looking table with rows missing.
+    const timer = setTimeout(() => child.kill(), 180000);
+
+    child.stdout.on('data', (c) => { out += c; });
+    child.stderr.on('data', (c) => { err += c; });
+    child.on('error', (e) => {
+      clearTimeout(timer); cleanup();
+      reject(new Error(`cannot run ${OPTIMIZE_EXE}: ${e.message || e}`));
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer); cleanup();
+      if (code !== 0) {
+        reject(new Error(`优化器退出码 ${code}：${err.trim() || '没有输出'}`));
+        return;
+      }
+      resolve(out);
+    });
+  });
+}
+
 http
   .createServer((req, res) => {
     let urlPath;
@@ -265,6 +343,52 @@ http
       }
 
       res.writeHead(405).end('GET or PUT');
+      return;
+    }
+
+    /**
+     * THE ARTIFACT OPTIMISER.
+     *
+     *   POST /api/optimize  { problem }  -> text/csv
+     *
+     * The body is the plain-text problem `lib/artifact-optimize.js` builds; the
+     * reply is the program's CSV verbatim, because the page is the only thing
+     * that knows what the columns mean. The page could not run the program
+     * itself -- a browser cannot spawn a process -- which is the whole reason
+     * this hop exists.
+     */
+    if (urlPath === '/api/optimize') {
+      if (req.method !== 'POST') {
+        res.writeHead(405).end('POST');
+        return;
+      }
+      readBody(req).then(async (body) => {
+        let parsed;
+        try {
+          parsed = JSON.parse(body);
+        } catch {
+          res.writeHead(400, { 'Content-Type': MIME['.json'] });
+          res.end(JSON.stringify({ error: 'body is not JSON' }));
+          return;
+        }
+        const problem = parsed?.problem;
+        if (typeof problem !== 'string' || !problem.trim()) {
+          res.writeHead(400, { 'Content-Type': MIME['.json'] });
+          res.end(JSON.stringify({ error: 'problem is required' }));
+          return;
+        }
+        try {
+          const csv = await runOptimizer(problem);
+          res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+          res.end(csv);
+        } catch (e) {
+          res.writeHead(e?.status || 500, { 'Content-Type': MIME['.json'] });
+          res.end(JSON.stringify({ error: String(e?.message || e) }));
+        }
+      }).catch((e) => {
+        res.writeHead(e.message === 'body too large' ? 413 : 400);
+        res.end(String(e.message || e));
+      });
       return;
     }
 

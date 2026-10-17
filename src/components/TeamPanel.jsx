@@ -28,7 +28,15 @@ import UnitCard from './builder/UnitCard';
 import ArtifactRow from './builder/artifact/ArtifactRow';
 import { PickerModal, PickerSearch } from './builder/controls';
 
-export default function TeamPanel({ compact = false }) {
+/**
+ * @param {object} [optimize] `{ entries, team, catalogue, talentDamage }` -- the
+ *   axis the artifact optimiser merges, plus the tables the merge needs. The
+ *   panel only forwards it: the artifact row is where a build is edited, and the
+ *   optimiser is a question about that build, so the button belongs down there
+ *   rather than on a page the panel has never heard of. Omitted by a caller with
+ *   no axis in hand, which hides the button.
+ */
+export default function TeamPanel({ compact = false, optimize }) {
   const { L } = useI18n();
   const { units, setUnit, removeUnit, addUnit } = useTeam();
   const [selectedId, setSelectedId] = useState(null);
@@ -110,6 +118,8 @@ export default function TeamPanel({ compact = false }) {
           <ArtifactRow
             value={selected.artifacts}
             onChange={(next) => setUnit(selected.id, { artifacts: next })}
+            charId={selected.char?.id}
+            optimize={optimize}
           />
         </div>
       )}

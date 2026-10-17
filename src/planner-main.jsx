@@ -338,6 +338,21 @@ function Page() {
   }, [entries, withDetail, catalogue, talentDamageTable]);
 
   /**
+   * Everything the artifact optimiser reads, in one stable object.
+   *
+   * It merges the axis's rows for ONE character into a closed-form expression
+   * (see `lib/merged-expression.js`), so it needs exactly what `computeAxis`
+   * needs and nothing else. Built here rather than inside the artifact row
+   * because the row has no axis in hand -- it is rendered by `TeamPanel`, which
+   * has no axis either -- and re-loading the axis from storage down there would
+   * be a second source of truth for the same document.
+   */
+  const optimizeBundle = useMemo(
+    () => ({ entries, team: withDetail, catalogue, talentDamage: talentDamageTable }),
+    [entries, withDetail, catalogue, talentDamageTable]
+  );
+
+  /**
    * THE ROWS A BUFF INSTANCE CAN BE BOUND TO, flattened, NAMED, AND PLACED.
    *
    * A row can sit in three places, and the binding panel has to see all of them:
@@ -1402,7 +1417,13 @@ function Page() {
           <h2 className="text-xs font-bold uppercase tracking-wider text-white/50">
             {L({ chs: '队伍', en: 'Team' })}
           </h2>
-          <TeamPanel />
+          {/* WHAT THE ARTIFACT OPTIMISER MERGES. `team` is the WITH-DETAIL list,
+              not the raw one: the merge resolves a row's buff formulas against
+              its OWNER's panel, so a card whose owner's detail file had not been
+              loaded would merge as a different number. Memoised on the same
+              inputs the axis is computed from, so the bundle is stable across
+              renders and only the optimiser's own dialog pays for it. */}
+          <TeamPanel optimize={optimizeBundle} />
           <ConfigTransfer
             axes={axesState}
             onReplaceAxes={replaceAxes}
