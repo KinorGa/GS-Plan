@@ -132,6 +132,11 @@ ok('the best allocation is named', res.includes('最优') || res.includes('Best'
 ok('the current build is compared', res.includes('当前配置') || res.includes('Current build'));
 ok('the row count is reported', /种分配/.test(res), res.slice(0, 200));
 ok('a page of rows is rendered', await p.locator('[data-optimize-results] tbody tr').count() > 50);
+// The cost of the search is part of its answer: the server measures spawn-to-close
+// and the dialog prints it, so a slow configuration is visible rather than felt.
+const took = await p.locator('[data-optimize-time]').innerText();
+ok('the search reports how long it took',
+  /\d/.test(took) && (took.includes('ms') || took.includes('s')), took);
 ok('the table has a column per substat',
   await p.locator('[data-optimize-results] thead svg, [data-optimize-results] thead img').count() >= 10,
   String(await p.locator('[data-optimize-results] thead svg, [data-optimize-results] thead img').count()));

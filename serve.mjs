@@ -247,6 +247,9 @@ function runOptimizer(problem) {
     fs.writeFileSync(file, problem, 'utf8');
     const cleanup = () => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ } };
 
+    // Wall clock from spawn to close: the SEARCH's own cost, without the HTTP hop
+    // or the browser parsing the CSV. Reported back so the dialog can show it.
+    const started = process.hrtime.bigint();
     const child = spawn(OPTIMIZE_EXE, [file, '--threads', String(Math.max(1, os.cpus().length))]);
     let out = '';
     let err = '';
@@ -267,7 +270,7 @@ function runOptimizer(problem) {
         reject(new Error(`优化器退出码 ${code}：${err.trim() || '没有输出'}`));
         return;
       }
-      resolve(out);
+      resolve({ csv: out, ms: Number(process.hrtime.bigint() - started) / 1e6 });
     });
   });
 }
@@ -378,8 +381,12 @@ http
           return;
         }
         try {
-          const csv = await runOptimizer(problem);
-          res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+          const { csv, ms } = await runOptimizer(problem);
+          res.writeHead(200, {
+            'Content-Type': 'text/plain; charset=utf-8',
+            'Cache-Control': 'no-store',
+            'X-Optimize-Ms': ms.toFixed(1),
+          });
           res.end(csv);
         } catch (e) {
           res.writeHead(e?.status || 500, { 'Content-Type': MIME['.json'] });

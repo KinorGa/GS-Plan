@@ -63,6 +63,10 @@ const fmt = (x, d = 0) => Number(x || 0).toLocaleString('en-US', {
   minimumFractionDigits: d, maximumFractionDigits: d,
 });
 const fmtGain = (g) => (g >= 0 ? '+' : '') + (g * 100).toFixed(2) + '%';
+/** Search cost, in the unit that reads best at its magnitude. */
+const fmtMs = (ms) => (ms == null
+  ? '-' 
+  : ms < 1000 ? Math.round(ms) + ' ms' : (ms / 1000).toFixed(2) + ' s');
 
 /** Whether the build on screen actually wears any substats. */
 const wornSubstats = (build) =>
@@ -140,6 +144,8 @@ function OptimizeDialog({ charId, build, optimize, onClose }) {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
+  /** How long the search took, measured by the server around the C++ run. */
+  const [elapsed, setElapsed] = useState(null);
   const [order, setOrder] = useState('avg');
   const [page, setPage] = useState(0);
 
@@ -205,6 +211,7 @@ function OptimizeDialog({ charId, build, optimize, onClose }) {
     setRunning(true);
     setError(null);
     setResult(null);
+    setElapsed(null);
     try {
       const problem = buildProblem({
         expr,
@@ -225,12 +232,15 @@ function OptimizeDialog({ charId, build, optimize, onClose }) {
         body: JSON.stringify({ problem }),
       });
       const text = await res.text();
+      const searchMs = Number(res.headers.get('X-Optimize-Ms'));
       if (!res.ok) {
         let message = text;
         try { message = JSON.parse(text).error || text; } catch { /* plain text */ }
         throw new Error(message);
       }
       setResult(parseResult(text));
+      // The server reports spawn-to-close; null if an older server omits it.
+      setElapsed(Number.isFinite(searchMs) && searchMs >= 0 ? searchMs : null);
       setPage(0);
     } catch (e) {
       setError(String(e?.message || e));
@@ -405,6 +415,7 @@ function OptimizeDialog({ charId, build, optimize, onClose }) {
                   page={page}
                   pageCount={pageCount}
                   setPage={setPage}
+                  elapsed={elapsed}
                 />
               )}
 
@@ -683,7 +694,7 @@ function Allocation({ row, L }) {
 }
 
 function Results({
-  L, result, best, current, order, setOrder, view, page, pageCount, setPage,
+  L, result, best, current, order, setOrder, view, page, pageCount, setPage, elapsed,
 }) {
   // The headline must follow the SORT, not always the average. A crit-maximising
   // allocation deliberately trades average damage for crit damage, so showing its
@@ -705,6 +716,9 @@ function Results({
             chs: '共 ' + (result.rows.length - 1) + ' 种分配（按面板去重）',
             en: (result.rows.length - 1) + ' distinct allocations (deduplicated on the panel)',
           })}
+        </span>
+        <span data-optimize-time className="text-[10px] text-white/45">
+          {L({ chs: '优化耗时', en: 'search took' }) + ' ' + fmtMs(elapsed)}
         </span>
         <div className="ml-auto flex items-center gap-1">
           <span className="text-[10px] text-white/35">{L({ chs: '排序', en: 'sort' })}</span>
