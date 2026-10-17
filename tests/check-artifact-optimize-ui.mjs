@@ -148,6 +148,38 @@ await p.waitForTimeout(200);
 ok('the table can be ordered by the crit convention',
   (await p.locator('[data-optimize-results] tbody tr').count()) > 0);
 
+// THE HEADLINE FOLLOWS THE SORT. A crit-maximising allocation deliberately trades
+// average damage for crit damage; if the top card kept showing 'avg' it would
+// report the best crit build as WORSE than the current one. Read the SAME metric
+// the table is sorted by, and require it to be at least the current build's.
+const num = (t) => Number(String(t).replace(/[^0-9.]/g, '')) || 0;
+const bestCrit = num(await p.locator('[data-optimize-best="crit"]').innerText());
+const curCrit = num(await p.locator('[data-optimize-current-value="crit"]').innerText());
+ok('the headline shows the CRIT value when sorted by crit',
+  bestCrit > 0 && curCrit > 0 && bestCrit >= curCrit,
+  bestCrit + ' vs ' + curCrit);
+
+await p.locator('[data-optimize-order="avg"]').click();
+await p.waitForTimeout(200);
+const bestAvg = num(await p.locator('[data-optimize-best="avg"]').innerText());
+const curAvg = num(await p.locator('[data-optimize-current-value="avg"]').innerText());
+ok('the headline shows the AVG value when sorted by avg',
+  bestAvg > 0 && curAvg > 0 && bestAvg >= curAvg,
+  bestAvg + ' vs ' + curAvg);
+
+// THE BASELINE IS SCALED BY NOTHING. The roll scale models the CANDIDATE rolls,
+// not the build the user wears: changing it must leave the current build's number
+// untouched, or every gain is measured against a build weaker than the real one.
+const curAvgBefore = num(await p.locator('[data-optimize-current-value="avg"]').innerText());
+await p.locator('[data-field="hit-scale"]').fill('0.8');
+await p.waitForTimeout(150);
+await p.locator('[data-optimize-run]').click();
+await p.waitForFunction(() => document.querySelectorAll('[data-optimize-results]').length === 1, null, { timeout: 120000 });
+const curAvgAfter = num(await p.locator('[data-optimize-current-value="avg"]').innerText());
+ok('the current build does not move with the roll scale',
+  curAvgAfter > 0 && curAvgAfter === curAvgBefore,
+  curAvgBefore + ' vs ' + curAvgAfter);
+
 // Switching a main stat REBUILDS the substat pool: the old main stat comes back as
 // an ordinary substat and the new one leaves the list. The sands is the slot to try
 // it on -- a plume has exactly one legal main stat, so nothing there can change.

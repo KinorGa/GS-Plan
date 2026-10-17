@@ -41,9 +41,11 @@ import {
 import {
   DEFAULT_HIT_SCALE, MAX_ROLLS_PER_LINE, MONO_ORDER, SYMBOL_LABEL, UPGRADES_DEFAULT,
   allowedSubstatsFor, buildProblem, defaultPieces, impliedHits, importPieces, monoFactors,
-  parseResult, pieceSpec, scaledRefPanel, stripSubstats,
+  parseResult, pieceSpec, stripSubstats,
 } from '../../../lib/artifact-optimize';
-import { mergedExpression, panelOf, totalAtkOf } from '../../../lib/merged-expression';
+import {
+  evaluate, mergedExpression, panelOf, totalAtkOf, variablesOf,
+} from '../../../lib/merged-expression';
 import { StatGlyph, StatMenu } from './StatGlyph';
 
 /** Rows per page. The enumeration is ~100k wide; the DOM is not. */
@@ -207,10 +209,13 @@ function OptimizeDialog({ charId, build, optimize, onClose }) {
       const problem = buildProblem({
         expr,
         panel: basePanel,
-        // The comparison is the CURRENT build under the SAME assumption the search
-        // makes about a roll, so the two numbers answer one question. At scale 1 it
-        // is the worn panel itself.
-        ref: scaledRefPanel(basePanel, curPanel, hitScale),
+        // The BASELINE IS A FACT, NOT AN ASSUMPTION. The current build is the panel
+        // the user actually wears, so it must not be discounted by the roll scale:
+        // the scale models UNKNOWN candidate rolls, and applying it here would make
+        // the comparison row weaker than the build on screen and inflate every gain.
+        ref: curPanel
+          ? { A: totalAtkOf(curPanel), C: curPanel.critDmg, R: curPanel.critRate }
+          : null,
         pieces,
         hitScale,
       });
@@ -316,7 +321,7 @@ function OptimizeDialog({ charId, build, optimize, onClose }) {
                         chs: '把当前配置的副词条作为“必选”填进五个部位',
                         en: 'Pin the substats this build wears as required',
                       })}
-                      onClick={() => replace(importPieces(build, { scale: hitScale, upgrades }))}
+                      onClick={() => replace(importPieces(build, { upgrades }))}
                       className="rounded border border-[#7fd4c1]/30 bg-[#7fd4c1]/10 px-2 py-0.5 text-[10px] text-[#7fd4c1] transition-colors hover:border-[#7fd4c1]/70 disabled:opacity-30"
                     >
                       {L({ chs: '从配置导入', en: 'Import build' })}
@@ -400,7 +405,6 @@ function OptimizeDialog({ charId, build, optimize, onClose }) {
                   page={page}
                   pageCount={pageCount}
                   setPage={setPage}
-                  hitScale={hitScale}
                 />
               )}
 
@@ -603,6 +607,7 @@ function Controls({ L, hitScale, setHitScale, upgrades, setUpgrades, worn, piece
           value={hitScale}
           set={setHitScale}
           step={0.05}
+          field="hit-scale"
         />
         <Field
           label={L({ chs: '每件强化次数', en: 'Upgrades per piece' })}
@@ -615,6 +620,7 @@ function Controls({ L, hitScale, setHitScale, upgrades, setUpgrades, worn, piece
           step={1}
           min={0}
           max={MAX_ROLLS_PER_LINE - 1}
+          field="upgrades"
         />
         <p className="text-[10px] leading-relaxed text-white/40">
           {L({ chs: '五件共 ' + rolls + ' 次掷点', en: rolls + ' rolls across the five pieces' })}
@@ -630,11 +636,12 @@ function Controls({ L, hitScale, setHitScale, upgrades, setUpgrades, worn, piece
   );
 }
 
-function Field({ label, hint, value, set, step = 1, min, max }) {
+function Field({ label, hint, value, set, step = 1, min, max, field }) {
   return (
     <label className="flex flex-col gap-1">
       <span className="text-[10px] text-white/45">{label}</span>
       <input
+        data-field={field}
         type="number"
         value={value}
         step={step}
@@ -676,9 +683,16 @@ function Allocation({ row, L }) {
 }
 
 function Results({
-  L, result, best, current, order, setOrder, view, page, pageCount, setPage, hitScale,
+  L, result, best, current, order, setOrder, view, page, pageCount, setPage,
 }) {
-  const gain = best && current ? best.avg / current.avg - 1 : 0;
+  // The headline must follow the SORT, not always the average. A crit-maximising
+  // allocation deliberately trades average damage for crit damage, so showing its
+  // `avg` while the table is ordered by `crit` makes the best crit build look
+  // WORSE than the current one (observed: -1.56% when its crit was really +19.3%).
+  const metric = ORDER_LABEL[order] ? order : 'avg';
+  const bestVal = best ? best[metric] : null;
+  const curVal = current ? current[metric] : null;
+  const gain = best && current && curVal ? bestVal / curVal - 1 : 0;
   const stats = result.stats;
   return (
     <section data-optimize-results className="mt-3 rounded-xl border border-white/[0.07] bg-white/[0.02] p-3">
@@ -719,7 +733,8 @@ function Results({
             <span className="text-[10px] font-bold text-[#7fd4c1]">
               {L({ chs: '最优', en: 'Best' })}
             </span>
-            <span className="text-[15px] font-bold tabular-nums text-white">{fmt(best?.avg)}</span>
+            <span data-optimize-best={metric} className="text-[15px] font-bold tabular-nums text-white">{fmt(bestVal)}</span>
+            <span className="text-[9px] text-white/35">{L(ORDER_LABEL[metric])}</span>
             <span className={'text-[11px] font-bold tabular-nums ' + (gain >= -1e-9 ? 'text-[#7fd4c1]' : 'text-amber-300')}>
               {fmtGain(gain)}
             </span>
@@ -737,7 +752,8 @@ function Results({
             <span className="text-[10px] font-bold text-amber-200">
               {L({ chs: '当前配置', en: 'Current build' })}
             </span>
-            <span className="text-[15px] font-bold tabular-nums text-white">{fmt(current?.avg)}</span>
+            <span data-optimize-current-value={metric} className="text-[15px] font-bold tabular-nums text-white">{fmt(curVal)}</span>
+            <span className="text-[9px] text-white/35">{L(ORDER_LABEL[metric])}</span>
           </div>
           <p className="mt-1.5 text-[10px] leading-relaxed text-white/45">
             {L({
@@ -748,12 +764,10 @@ function Results({
             })}
           </p>
           <p className="mt-1 text-[10px] leading-relaxed text-white/30">
-            {hitScale === 1
-              ? L({ chs: '系数 1.0：这一行就是你的真实面板', en: 'scale 1: this row is the real panel' })
-              : L({
-                chs: '当前配置按单次命中系数 ' + hitScale + ' 折算（每次命中只算满档的 ' + hitScale + ' 成）；系数改成 1.0 就是真实面板。',
-                en: 'The current build is discounted by the roll scale ' + hitScale + ', the same way every roll in the search is; set the scale to 1 for the real panel.',
-              })}
+            {L({
+              chs: '这一行始终是你穿戴的真实面板，不随单次命中系数变化；该系数只用于模拟搜索里的候选词条。',
+              en: 'This row is always the panel you actually wear and does not move with the roll scale; the scale only models the candidate rolls.',
+            })}
           </p>
           {!current && (
             <p className="mt-1 text-[10px] text-white/35">
@@ -776,9 +790,9 @@ function Results({
               <th className="p-1 text-right">A</th>
               <th className="p-1 text-right">{L({ chs: '暴击率', en: 'CR' })}</th>
               <th className="p-1 text-right">{L({ chs: '暴伤', en: 'CD' })}</th>
-              <th className="p-1 text-right">{L({ chs: '期望', en: 'avg' })}</th>
-              <th className="p-1 text-right">{L({ chs: '暴击', en: 'crit' })}</th>
-              <th className="p-1 text-right">{L({ chs: '不暴击', en: 'never' })}</th>
+              <th className={'p-1 text-right ' + (metric === 'avg' ? 'font-bold text-white' : 'text-white/50')}>{L({ chs: '期望', en: 'avg' })}</th>
+              <th className={'p-1 text-right ' + (metric === 'crit' ? 'font-bold text-white' : 'text-white/50')}>{L({ chs: '暴击', en: 'crit' })}</th>
+              <th className={'p-1 text-right ' + (metric === 'never' ? 'font-bold text-white' : 'text-white/50')}>{L({ chs: '不暴击', en: 'never' })}</th>
             </tr>
           </thead>
           <tbody>
@@ -796,9 +810,9 @@ function Results({
                 <td className="p-1 text-right text-white/70">{fmt(row.A)}</td>
                 <td className="p-1 text-right text-white/70">{fmt(row.R, 2)}</td>
                 <td className="p-1 text-right text-white/70">{fmt(row.C, 2)}</td>
-                <td className="p-1 text-right font-bold text-white">{fmt(row.avg)}</td>
-                <td className="p-1 text-right text-white/55">{fmt(row.crit)}</td>
-                <td className="p-1 text-right text-white/55">{fmt(row.never)}</td>
+                <td className={'p-1 text-right ' + (metric === 'avg' ? 'font-bold text-white' : 'text-white/55')}>{fmt(row.avg)}</td>
+                <td className={'p-1 text-right ' + (metric === 'crit' ? 'font-bold text-white' : 'text-white/55')}>{fmt(row.crit)}</td>
+                <td className={'p-1 text-right ' + (metric === 'never' ? 'font-bold text-white' : 'text-white/55')}>{fmt(row.never)}</td>
               </tr>
             ))}
           </tbody>
@@ -840,58 +854,261 @@ function Results({
  * The search maximises THIS, so a user who wants to argue with the answer needs to
  * be able to see it: every coefficient the optimiser was handed, in the monomial
  * slot it was handed in.
+ *
+ * SHOWN AS A FORMULA, NOT A COLUMN OF TEXT. The panel used to be two naked lists of
+ * "name   number", which hid the three things a reader needs: which symbols are
+ * variables, what the terms are made of, and which of them a substat roll can move.
+ * So: a legend of the panel's quantities drawn with their glyphs (teal = movable,
+ * dim = fixed this run), the terms grouped by degree the way the polynomial is
+ * built, and a colour that says whether a term survives a change of allocation.
  */
+
+/** The panel quantity each symbol stands for, as a stat key that HAS a glyph. */
+const SYMBOL_STAT = {
+  A: 'atk', U: 'anemoDmg', P: 'pyroDmg', C: 'critDmg', R: 'critRate',
+};
+
+/**
+ * What a substat roll can actually move.
+ *
+ * ATK% and flat ATK feed A; CRIT DMG and CRIT Rate are rolled directly. Anemo /
+ * Pyro / generic DMG bonus is NOT in the substat pool -- no piece can roll it -- so
+ * those columns are constant during a search, and every term built only from them
+ * is the same number for every candidate. That is the difference the colour marks.
+ */
+const MOVABLE = new Set(['A', 'C', 'R']);
+
+const fmtCoef = (x) => Number(Number(x).toPrecision(6)).toLocaleString('en-US');
+
+/** One panel quantity: its glyph, its name, and whether the search can move it. */
+function Var({ sym, L, size = 12 }) {
+  const movable = MOVABLE.has(sym);
+  return (
+    <span className={'inline-flex items-center gap-1 ' + (movable ? 'text-[#7fd4c1]' : 'text-white/35')}>
+      {SYMBOL_STAT[sym]
+        ? <StatGlyph stat={SYMBOL_STAT[sym]} size={size} />
+        : null}
+      <span className="text-[10px]">{L(SYMBOL_LABEL[sym])}</span>
+    </span>
+  );
+}
+
+/** One monomial: its factors as chips, then the coefficient the program was handed. */
+function TermRow({ mono, value, L }) {
+  const factors = monoFactors(mono);
+  const hot = factors.some((s) => MOVABLE.has(s));
+  return (
+    <div className="flex items-baseline gap-2 py-[1px] tabular-nums">
+      <span className="text-[10px] leading-none text-white/20">+</span>
+      <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1">
+        {factors.length === 0
+          ? <span className="text-[10px] text-white/45">{L({ chs: '常数项', en: 'constant' })}</span>
+          : factors.map((s, k) => (
+            <span key={s} className="inline-flex items-center gap-1">
+              {k > 0 && <span className="text-[10px] text-white/25">x</span>}
+              <Var sym={s} L={L} />
+            </span>
+          ))}
+      </span>
+      <span className={'text-[10px] font-bold ' + (hot ? 'text-white' : 'text-white/45')}>
+        {fmtCoef(value)}
+      </span>
+    </div>
+  );
+}
+
+/** 0 when the term can change with the allocation, 1 when it cannot. */
+const movedFirst = (mono) => (monoFactors(mono).some((s) => MOVABLE.has(s)) ? 0 : 1);
+
+/** The degrees a monomial can have, in the order the polynomial grows. */
+const DEGREES = [
+  { n: 0, label: { chs: '常数', en: 'constant' } },
+  { n: 1, label: { chs: '一项', en: 'one factor' } },
+  { n: 2, label: { chs: '两项相乘', en: 'two factors' } },
+  { n: 3, label: { chs: '三项相乘', en: 'three factors' } },
+];
+
+/** A coefficient map as a card: terms grouped by degree, in the program's order. */
+function CoeffList({ title, sub, coeffs, L, accent }) {
+  const rows = MONO_ORDER.filter((m) => Number(coeffs?.[m]) || 0);
+  return (
+    <div className="rounded-lg border border-white/[0.06] bg-white/[0.015] p-2">
+      <p className="mb-1.5 flex flex-wrap items-baseline gap-x-2">
+        <span className={'text-[11px] font-bold ' + (accent || 'text-white/85')}>{title}</span>
+        {sub && <span className="text-[9px] text-white/35">{sub}</span>}
+      </p>
+      {DEGREES.map(({ n, label }) => {
+        // Movable terms first: within one degree, the ones built from A / C / R are
+        // the only ones that can differ between two allocations, so they lead.
+        const group = rows
+          .filter((m) => monoFactors(m).length === n)
+          .sort((a, b) => movedFirst(a) - movedFirst(b));
+        if (!group.length) return null;
+        return (
+          <div key={n} className="mb-1 last:mb-0">
+            <p className="text-[9px] tracking-wide text-white/25">{L(label)}</p>
+            {group.map((m) => <TermRow key={m} mono={m} value={coeffs[m]} L={L} />)}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function Expression({ expr, basePanel, curPanel, L }) {
+  const never = expr.coeffs.never || {};
+  const crit = expr.coeffs.crit || {};
+  // The panel's own variables AT THE WORN BUILD, so the master formula can be
+  // shown as ARITHMETIC and not just as symbols: the weights and the per-group
+  // contributions are what turn the abstract Sigma into something checkable.
+  const cv = curPanel ? variablesOf(curPanel) : null;
+  const R = cv ? cv.R : 0;
+  const neverVal = cv ? evaluate(never, cv) : null;
+  const groupVals = expr.coeffs.avgGroups.map((g) => {
+    const mu = Math.min(R + g.crBuff, 100) / 100;
+    const df = cv ? evaluate(g.delta, cv) : null;
+    return { ...g, mu, df, contrib: cv ? mu * df : null };
+  });
+  const avgVal = cv ? neverVal + groupVals.reduce((t, g) => t + g.contrib, 0) : null;
   return (
     <details open className="mt-3 rounded-xl border border-white/[0.07] bg-white/[0.02] p-3">
       <summary className="cursor-pointer text-[11px] font-bold text-white/80">
         {L({ chs: '合并后的伤害表达式', en: 'Merged damage expression' })}
+        <span className="ml-2 font-normal text-white/35">
+          {L({
+            chs: expr.entries + ' 个伤害条目 · ' + expr.parts + ' 段 → 一个关于面板的多项式',
+            en: expr.entries + ' entries · ' + expr.parts + ' parts → one polynomial of the panel',
+          })}
+        </span>
       </summary>
-      <p className="mt-2 mb-2 text-[10px] leading-relaxed text-white/45">
+
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-white/[0.06] bg-white/[0.015] px-2 py-1.5">
+        <span className="text-[9px] text-white/30">{L({ chs: '面板变量', en: 'panel' })}</span>
+        {['A', 'U', 'P', 'G', 'C', 'R'].map((s) => <Var key={s} sym={s} L={L} size={13} />)}
+        <span className="ml-auto text-[9px] text-white/30">
+          {L({
+            chs: 'A = 基础攻击 x (1 + 攻击力% / 100) + 固定攻击',
+            en: 'A = base ATK x (1 + ATK% / 100) + flat ATK',
+          })}
+        </span>
+      </div>
+      <p className="mt-1.5 text-[10px] leading-relaxed text-white/45">
+        <span className="text-[#7fd4c1]">■</span>{' '}
         {L({
-          chs: '把 ' + expr.entries + ' 个伤害条目（' + expr.parts + ' 段）合并成一个关于面板的多项式：总攻击力 A = 基础攻击 × (1 + 攻击力% / 100) + 固定攻击。搜索只移动副词条的掷点——主词条、套装、武器、天赋与队友增益都保持当前配置。',
-          en: 'Merges ' + expr.entries + ' damage entries (' + expr.parts + ' parts) into one polynomial of the panel: total ATK A = base ATK x (1 + ATK% / 100) + flat ATK. The search only moves substat rolls; main stats, sets, weapon, talents and teammate buffs stay as configured.',
+          chs: '亮色的会被副词条推动（攻击力%、暴击率、暴伤）；风伤 / 火伤 / 增伤不在副词条池里，本次搜索中是常数——只由它们组成的项对所有候选都一样，不决定谁更优。',
+          en: 'Teal quantities are what a substat roll moves (ATK%, CRIT Rate, CRIT DMG). Anemo / Pyro / generic DMG bonus is not in the substat pool, so it is constant here and a term built only from those is the same for every candidate.',
         })}
       </p>
 
-      <div className="mb-2 grid grid-cols-2 gap-x-4 gap-y-0.5 text-[10px] text-white/55">
-        <div>
-          {L({ chs: '搜索基线（去掉副词条）', en: 'Search baseline (substats removed)' })}
-          {': A=' + fmt(basePanel?.atk) + ' , 暴击率=' + fmt(basePanel?.critRate, 2) + '% , 暴伤=' + fmt(basePanel?.critDmg, 2) + '%'}
-        </div>
-        <div>
-          {L({ chs: '当前面板', en: 'Current panel' })}
-          {': A=' + fmt(curPanel && totalAtkOf(curPanel)) + ' , 暴击率=' + fmt(curPanel?.critRate, 2) + '% , 暴伤=' + fmt(curPanel?.critDmg, 2) + '%'}
-        </div>
+      <p className="mt-2 mb-1 flex flex-wrap items-baseline gap-x-2 text-[10px] text-white/45">
+        <span className="text-white/70">{'D = Σ 系数 x 单项式'}</span>
+        {DEGREES.map(({ n, label }) => {
+          const c = MONO_ORDER.filter((m) => monoFactors(m).length === n
+            && ((Number(never[m]) || 0) || (Number(crit[m]) || 0))).length;
+          return c ? (
+            <span key={n} className="rounded border border-white/[0.08] px-1.5 py-[1px] text-white/55">
+              {L(label) + ' ' + c}
+            </span>
+          ) : null;
+        })}
+      </p>
+
+      {/* ---- THE WHOLE FORMULA FIRST, THEN ITS PARTS ----
+          The panel only reads in this order. A reader needs the SHAPE
+          (expected = a base + weighted crit increments) before any coefficient
+          list means anything, and `f_never` on its own says nothing about why a
+          term with no crit rate, no crit dmg is even there. So the master formula
+          and what each symbol IS come first, with the numbers filled in at the
+          panel currently on screen; only then do f_never / f_crit / the groups. */}
+      <div className="mt-2 rounded-lg border border-white/[0.12] bg-white/[0.04] p-2.5">
+        <p className="text-[11px] font-bold text-white/85">
+          {L({ chs: '总式：期望伤害', en: 'The whole formula: expected damage' })}
+        </p>
+        <p className="mt-1 text-[13px] font-bold tabular-nums text-[#7fd4c1]">
+          {'f_avg = f_never + Σ min(R + ΔR, 100) / 100 x Δf'}
+        </p>
+        <ul className="mt-1.5 grid grid-cols-1 gap-y-0.5 text-[9px] leading-snug text-white/50 sm:grid-cols-2 sm:gap-x-4">
+          <li>
+            <span className="font-semibold text-white/70">{'f_never'}</span>
+            {L({
+              chs: '：每条目取「不暴击」（暴击因子 = 1）后的总和 —— 不含暴击率、不含暴伤。就是下面的第一个表。',
+              en: ': every entry with crit factor = 1 (no crit) -- no CRIT Rate, no CRIT DMG. The first table below.',
+            })}
+          </li>
+          <li>
+            <span className="font-semibold text-white/70">{'f_crit'}</span>
+            {L({
+              chs: '：同一批条目取「必定暴击」（暴击因子 = 1 + 暴伤 / 100）后的总和，是 Δf 的参照。',
+              en: ': the same entries with crit factor = 1 + CRIT DMG / 100; the reference Δf is measured against.',
+            })}
+          </li>
+          <li>
+            <span className="font-semibold text-white/70">{'Δf = f_crit - f_never'}</span>
+            {L({
+              chs: '：暴击带来的增量，按每行的暴击率增益 ΔR 分组，各给一个 Δf。',
+              en: ': the crit increment, grouped by each row CRIT Rate buff ΔR; one Δf per group.',
+            })}
+          </li>
+          <li>
+            <span className="font-semibold text-white/70">{'min(R + ΔR, 100) / 100'}</span>
+            {L({
+              chs: '：该组真正吃到暴击的权重（暴击率），超过 100% 被截断。',
+              en: ': the weight (CRIT Rate) that group crits at, clamped at 100%.',
+            })}
+          </li>
+        </ul>
+        {avgVal != null && (
+          <p className="mt-2 border-t border-white/[0.08] pt-1.5 text-[9px] leading-relaxed tabular-nums text-white/50">
+            {L({ chs: '以当前面板代入：', en: 'at the current panel: ' })}
+            {'f_avg = ' + fmtCoef(neverVal)}
+            {groupVals.map((g) => ' + (' + g.mu.toFixed(4) + ' x ' + fmtCoef(g.df) + ')').join('')}
+            {' = ' + fmtCoef(avgVal)}
+          </p>
+        )}
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <p className="mb-1 text-[10px] font-semibold text-white/60">
-            {L({ chs: 'f_never（不暴击）', en: 'f_never (never crits)' })}
-          </p>
-          <Terms coeffs={expr.coeffs.never} L={L} sign="+" />
-        </div>
-        <div>
-          <p className="mb-1 text-[10px] font-semibold text-white/60">
-            {L({ chs: 'f_crit（必定暴击）', en: 'f_crit (always crits)' })}
-          </p>
-          <Terms coeffs={expr.coeffs.crit} L={L} sign="+" />
-        </div>
+      <div className="mt-2 grid grid-cols-2 gap-3">
+        <CoeffList
+          title={L({ chs: '子项 f_never（不暴击）', en: 'part f_never (never crits)' })}
+          sub={L({ chs: '总式第一项：暴击因子 = 1', en: 'first term: crit factor = 1' })}
+          coeffs={never} L={L}
+        />
+        <CoeffList
+          title={L({ chs: '子项 f_crit（必定暴击）', en: 'part f_crit (always crits)' })}
+          sub={L({ chs: 'Δf 的参照：暴击因子 = 1 + 暴伤 / 100', en: 'the Δf reference: crit factor = 1 + CRIT DMG / 100' })}
+          coeffs={crit} L={L}
+        />
       </div>
 
       <div className="mt-2 border-t border-white/[0.06] pt-2">
         <p className="text-[10px] leading-relaxed text-white/50">
-          {'f_avg = f_never + Σ min(R + ΔR, 100) / 100 × Δf'}
+          <span className="font-semibold text-white/70">{L({ chs: '总式 Σ 后面的每一项：Δf 分组', en: 'each Σ term in the formula above: the Δf groups' })}</span>
+          {L({
+            chs: '。每行的暴击率增益不同、100% 封顶的拐点也不同（R = 100 - ΔR），所以不能并成一项，按 ΔR 分组；每组的 Δf = 该组行上的 f_crit - f_never。',
+            en: '. Each row caps at a different CRIT Rate (R = 100 - ΔR), so they cannot merge into one; they are grouped by ΔR, and each group Δf = f_crit - f_never over that group of rows.',
+          })}
         </p>
-        {expr.coeffs.avgGroups.map((g) => (
-          <div key={g.crBuff} className="mt-1.5">
-            <p className="text-[10px] font-semibold text-white/60">
-              {'ΔR = ' + g.crBuff + ' '}
-              {L({ chs: '暴击率加成', en: 'crit-rate buff' })}
-            </p>
-            <Terms coeffs={g.delta} L={L} sign="Δ" />
-          </div>
+        {groupVals.map((g) => (
+          <details key={g.crBuff} className="mt-1.5 rounded-lg border border-white/[0.06] bg-white/[0.015] p-2">
+            <summary className="flex cursor-pointer flex-wrap items-baseline gap-x-2 text-[10px] text-white/60">
+              <span>{'ΔR = +' + g.crBuff + '% '}
+                {L({ chs: '行上暴击率', en: 'row CRIT Rate buff' })}</span>
+              <span className="tabular-nums text-white/40">
+                {'权重 min(R + ΔR, 100) / 100 = ' + g.mu.toFixed(4)}
+              </span>
+              {g.contrib != null && (
+                <span className="tabular-nums text-white/40">
+                  {'贡献 = ' + fmtCoef(g.contrib)}
+                </span>
+              )}
+              <span className="ml-auto text-white/30">
+                {MONO_ORDER.filter((m) => Number(g.delta?.[m]) || 0).length + ' ' + L({ chs: '项', en: 'terms' })}
+              </span>
+            </summary>
+            <div className="mt-1">
+              <CoeffList title={'Δf'} sub={'ΔR = +' + g.crBuff + '%'} coeffs={g.delta} L={L} />
+            </div>
+          </details>
         ))}
         {expr.warnings.map((w) => (
           <p key={w.code} className="mt-1 text-[10px] text-amber-300/80">
@@ -901,31 +1118,17 @@ function Expression({ expr, basePanel, curPanel, L }) {
           </p>
         ))}
       </div>
+
+      <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-0.5 text-[10px] text-white/45">
+        <div>
+          {L({ chs: '搜索基线（去掉副词条）', en: 'Search baseline (substats removed)' })}
+          {': A=' + fmt(basePanel?.atk) + ' , 暴击率=' + fmt(basePanel?.critRate, 2) + '% , 暴伤=' + fmt(basePanel?.critDmg, 2) + '%'}
+        </div>
+        <div>
+          {L({ chs: '当前面板', en: 'Current panel' })}
+          {': A=' + fmt(curPanel && totalAtkOf(curPanel)) + ' , 暴击率=' + fmt(curPanel?.critRate, 2) + '% , 暴伤=' + fmt(curPanel?.critDmg, 2) + '%'}
+        </div>
+      </div>
     </details>
-  );
-}
-
-/** One symbol as the panel quantity the UI names. */
-function monoName(mono, L) {
-  if (mono === '1') return L({ chs: '常数项', en: 'constant' });
-  return monoFactors(mono).map((s) => L(SYMBOL_LABEL[s] || { chs: s, en: s })).join(' × ');
-}
-
-/** A coefficient map, one row per non-zero term, in the program's own order. */
-function Terms({ coeffs, L, sign }) {
-  return (
-    <div>
-      {MONO_ORDER.map((mono) => {
-        const value = Number(coeffs?.[mono]) || 0;
-        if (!value) return null;
-        return (
-          <div key={mono} className="flex items-baseline gap-2 tabular-nums">
-            <span className="text-[10px] text-white/40">{sign}</span>
-            <span className="min-w-[150px] text-[10px] text-white/70">{monoName(mono, L)}</span>
-            <span className="text-[10px] font-bold text-white">{Number(value.toPrecision(6)).toLocaleString('en-US')}</span>
-          </div>
-        );
-      })}
-    </div>
   );
 }

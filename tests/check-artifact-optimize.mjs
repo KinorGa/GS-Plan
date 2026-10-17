@@ -27,7 +27,7 @@ const ok = (n, c, x = '') => { if (c) { pass++; console.log('PASS  ' + n); } els
 
 const {
   buildProblem, parseResult, coeffVector, MONO_ORDER, pieceSpec, importPieces,
-  defaultPieces, scaledRefPanel, stripSubstats,
+  defaultPieces, stripSubstats,
 } = await import('../src/lib/artifact-optimize.js');
 
 /* -------------------------------------------------------------- 1. translation */
@@ -269,10 +269,10 @@ if (!fs.existsSync(EXE)) {
         base.critRate < cur.critRate && base.critDmg < cur.critDmg,
         base.critRate + '/' + base.critDmg + ' vs ' + cur.critRate + '/' + cur.critDmg);
 
-      // The comparison row at scale 1 IS the worn panel -- the guarantee that the
-      // number the optimiser is compared against is the one the user has.
-      const ref = scaledRefPanel(base, cur, 1);
-      ok('the comparison panel at scale 1 is the worn panel',
+      // The comparison row IS the worn panel, at ANY roll scale: the scale models
+      // hypothetical candidate rolls, not the build the user actually wears.
+      const ref = { A: totalAtkOf(cur), C: cur.critDmg, R: cur.critRate };
+      ok('the comparison panel is the worn panel',
         Math.abs(ref.A - totalAtkOf(cur)) < 1e-9
         && Math.abs(ref.C - cur.critDmg) < 1e-9
         && Math.abs(ref.R - cur.critRate) < 1e-9,

@@ -225,35 +225,6 @@ export function importPieces(build, { upgrades = UPGRADES_DEFAULT } = {}) {
   });
 }
 
-/**
- * The CURRENT build as the SEARCH sees it: its substats discounted by 'scale'.
- *
- * The search charges 'scale' of a top-tier roll per roll, because the tier a roll
- * lands on is not a fact anyone knows in advance. That assumption has to be applied
- * to the comparison as well, or the two numbers are not the same question: at scale
- * 0.8 the search is systematically 6% pessimistic about every roll, and the current
- * build -- whose rolls really average 0.85 -- then beats an answer that is in fact
- * better. Discounting both sides makes the comparison honest, and makes the
- * guarantee true: every line of a legal build holds at most six rolls and the nine
- * per piece add up, so the worn allocation IS reachable, and its model value is
- * base + scale x (a top tier per roll) which is at least base + scale x (what the
- * piece shows).
- *
- * At scale 1 the result is the worn panel itself, unchanged.
- */
-export function scaledRefPanel(base, cur, scale = DEFAULT_HIT_SCALE) {
-  if (!base || !cur) return null;
-  const mix = (k) => (base[k] || 0) + ((cur[k] || 0) - (base[k] || 0)) * scale;
-  const atkPct = mix('atkPct');
-  const flatAtk = mix('flatAtk');
-  return {
-    atkPct,
-    flatAtk,
-    A: (base.atk || 0) * (1 + atkPct / 100) + flatAtk,
-    C: mix('critDmg'),
-    R: mix('critRate'),
-  };
-}
 
 /**
  * The problem file.
