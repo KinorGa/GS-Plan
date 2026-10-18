@@ -646,8 +646,8 @@ function DamageEntry({
           if (!onSelect) return;
           onSelect({ shift: e.shiftKey, meta: e.metaKey || e.ctrlKey });
         }}
-        className={`cv-auto group flex items-center gap-3 rounded-xl border bg-[#0a0a0a] px-2.5 py-2 transition-colors ${
-          over ? 'border-[#7fd4c1] bg-white/[0.03]' : 'border-white/10'
+        className={`cv-auto group flex items-center gap-3 rounded-xl border px-3 py-2 transition-colors ${
+          over ? 'border-[#7fd4c1] bg-white/[0.03]' : 'border-white/10 bg-[#0d0e11] hover:border-white/[0.16] hover:bg-[#111216]'
         } ${
           // The ring is drawn OUTSIDE the border so the row does not change size
           // when it is selected -- a one-pixel shift on every click would make a
@@ -655,7 +655,7 @@ function DamageEntry({
           selected ? 'ring-2 ring-[#7fd4c1]/70 bg-[#7fd4c1]/[0.06]' : ''
         }`}
       >
-        <span className="w-4 shrink-0 text-center text-[10px] tabular-nums text-white/30">
+        <span className="w-4 shrink-0 text-center text-[10px] tabular-nums text-white/40">
           {index + 1}
         </span>
 
@@ -683,12 +683,12 @@ function DamageEntry({
         <span className="flex min-w-0 flex-1 items-center gap-3">
           <span className="flex min-w-0 shrink flex-col leading-tight">
             <span
-              className="truncate text-[9px] font-bold uppercase tracking-wider"
+              className="truncate text-[10px] font-semibold uppercase tracking-[0.12em]"
               style={{ color: el.color }}
             >
               {summary ? SOURCE_KIND_LABEL(summary.sourceKey, L) : L({ chs: '未选择角色', en: 'No character' })}
             </span>
-            <span className="truncate text-[12px] font-medium text-white">
+            <span className="truncate text-[13px] font-medium text-zinc-100">
               {summary ? L(summary.stage) : '—'}
             </span>
           </span>
@@ -704,18 +704,18 @@ function DamageEntry({
             element now draws the neutral blade the card uses. */}
         <span className="hidden shrink-0 items-center gap-1.5 sm:flex">
           <ElementGlyph element={summary?.element} size={14} />
-          <span className="text-[10px] text-white/45">
+          <span className="text-[11px] text-white/50">
             {summary ? L(summary.reaction) : '—'}
           </span>
         </span>
 
         {/* Damage. */}
         <span className="w-[76px] shrink-0 text-right">
-          <span className="block text-[15px] font-bold tabular-nums text-white">
+          <span className="block text-[16px] font-bold tabular-nums text-zinc-100">
             {summary ? Math.round(summary.perHit).toLocaleString('en-US') : '—'}
           </span>
           {summary?.hits > 1 && (
-            <span className="block text-[9px] text-white/35">
+            <span className="block text-[10px] text-white/40">
               ×{summary.hits} = {Math.round(summary.total).toLocaleString('en-US')}
             </span>
           )}
@@ -725,7 +725,7 @@ function DamageEntry({
           type="button"
           onClick={toggle}
           title={L({ chs: '展开', en: 'Expand' })}
-          className="shrink-0 rounded px-1.5 py-0.5 text-[16px] leading-none text-white/45 transition-colors hover:text-white"
+          className="shrink-0 rounded px-1.5 py-0.5 text-[16px] leading-none text-white/55 transition-colors hover:text-white"
         >
           ▾
         </button>
@@ -733,7 +733,7 @@ function DamageEntry({
           type="button"
           onClick={onRemove}
           title={L({ chs: '删除该条目', en: 'Remove entry' })}
-          className="shrink-0 rounded px-1 text-[11px] text-white/20 transition-colors hover:text-white/80"
+          className="shrink-0 rounded px-1 text-[11px] text-white/25 transition-colors hover:text-red-300"
         >
           ✕
         </button>
@@ -935,7 +935,7 @@ function DamageEntry({
        * The border stays NEUTRAL and the same width in both states, so nothing
        * shifts when a row opens.
        */
-      className={`cv-auto relative flex flex-col gap-2 overflow-hidden rounded-2xl border p-2 pl-3 transition-[border-color,background-color,box-shadow] duration-200 ${
+      className={`cv-auto relative flex flex-col gap-2 overflow-hidden rounded-xl border p-2 pl-3 transition-[border-color,background-color,box-shadow] duration-200 ${
         over
           ? 'border-[#7fd4c1]/60 bg-white/[0.06] shadow-2xl shadow-black/40'
           : 'border-white/15 bg-white/[0.03] shadow-xl shadow-black/40'

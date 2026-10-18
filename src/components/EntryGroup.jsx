@@ -554,10 +554,10 @@ function EntryGroup({
      */
     <div
       data-entry-group={entry.id}
-      className={`cv-auto relative overflow-hidden rounded-2xl border p-2 transition-[border-color,background-color,box-shadow] ${
+      className={`cv-auto relative overflow-hidden rounded-xl border p-2 transition-[border-color,background-color,box-shadow] ${
         entry.expanded
           ? 'border-white/15 bg-white/[0.03] shadow-xl shadow-black/40'
-          : 'border-white/10'
+          : 'border-white/10 bg-[#0d0e11] hover:border-white/[0.16] hover:bg-[#111216]'
       }`}
       style={entry.expanded
         ? { backgroundImage: `linear-gradient(180deg, ${tint(accent, 0.08)} 0%, ${tint(accent, 0.025)} 45%, transparent 100%)` }
@@ -597,7 +597,7 @@ function EntryGroup({
           selected ? 'bg-[#7fd4c1]/[0.06] ring-2 ring-[#7fd4c1]/70' : ''
         }`}
       >
-        <span className="shrink-0 rounded bg-white/5 px-1.5 py-0.5 text-[10px] tabular-nums text-white/40">
+        <span className="shrink-0 rounded bg-white/5 px-1.5 py-0.5 text-[10px] tabular-nums text-white/45">
           {index + 1}
         </span>
         {/* THE PORTRAIT, matching every other entry row.
@@ -624,12 +624,12 @@ function EntryGroup({
             {/* THE KIND AND THE ROW TYPE, so "多段伤害" is never a label with no
                 subject: the reader can see it is 元素战技's 苍噬伤害 before
                 opening it, exactly as a single-stage row reads. */}
-            <span className="block text-[9px] font-bold uppercase tracking-wider text-[#7fd4c1]">
+            <span className="block text-[10px] font-semibold uppercase tracking-[0.12em] text-[#7fd4c1]">
               {SOURCE_KIND_LABEL(entry.summary?.sourceKey, L)}
               {' · '}
               {L({ chs: '多段伤害', en: 'Multi-part hit' })}
             </span>
-            <span className="block truncate text-[12px] font-medium text-white">
+            <span className="block truncate text-[13px] font-medium text-zinc-100">
               {parentStageLabel ? L(parentStageLabel) : '—'}
             </span>
           </span>
@@ -648,7 +648,7 @@ function EntryGroup({
               <span key={r.id} className="flex items-center gap-1.5">
                 <ElementGlyph element={r.element} size={13} />
                 <span className="flex flex-col items-end leading-tight">
-                  <span className="text-[13px] font-bold tabular-nums text-white">
+                  <span className="text-[15px] font-bold tabular-nums text-zinc-100">
                     {r.figure
                       ? Math.round(r.figure.perHit).toLocaleString('en-US')
                       : <span className="text-white/25">—</span>}
@@ -660,7 +660,7 @@ function EntryGroup({
                       the rows added to 644,715 against a summary of 714,184 -- the
                       same numbers, disagreeing, which is the worst of both. */}
                   {r.figure?.hits > 1 && (
-                    <span className="text-[9px] text-white/35">
+                    <span className="text-[10px] text-white/40">
                       ×{r.figure.hits} = {Math.round(r.figure.total).toLocaleString('en-US')}
                     </span>
                   )}
@@ -670,7 +670,7 @@ function EntryGroup({
           </span>
         )}
 
-        <span className="shrink-0 text-[10px] text-white/35">
+        <span className="shrink-0 text-[11px] text-white/40">
           {children.length} {L({ chs: '段', en: 'parts' })}
         </span>
         {/* Whether every child has been told what element it carries. A child

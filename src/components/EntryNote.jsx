@@ -81,6 +81,9 @@ export default function EntryNote({ value, onChange, L, variant = 'row' }) {
   }
 
   const empty = !text;
+  const rowNoteClass = empty
+    ? 'block min-w-0 flex-1 truncate rounded-md border border-transparent px-2 py-0.5 text-left text-[11px] leading-snug text-white/20 transition-colors hover:border-white/10 hover:bg-white/[0.03] hover:text-white/60 focus-visible:border-white/20 focus-visible:bg-white/[0.04] focus-visible:text-white/70'
+    : 'block min-w-0 flex-1 truncate rounded-md border border-transparent px-2 py-0.5 text-left text-[11px] leading-snug text-white/55 transition-colors hover:border-white/10 hover:bg-white/[0.035] hover:text-white/75';
 
   return (
     <button
@@ -91,18 +94,27 @@ export default function EntryNote({ value, onChange, L, variant = 'row' }) {
       className={
         variant === 'card'
           ? 'block w-full rounded-md border border-dashed border-white/10 bg-white/[0.02] px-2 py-1 text-left text-[11px] leading-snug text-white/25 transition-colors hover:border-white/25 hover:bg-white/[0.05] hover:text-white/60'
-          : 'block min-w-0 flex-1 truncate rounded-md border border-dashed border-white/10 px-2 py-0.5 text-left text-[11px] leading-snug text-white/25 transition-colors hover:border-white/25 hover:bg-white/[0.05] hover:text-white/60'
+          : rowNoteClass
       }
     >
       {empty ? (
-        // The box keeps its dashed outline even when empty, so the control is
-        // findable on a row nobody has written on yet -- which is every row to
-        // start with.
-        <span className="text-white/25">
-          ＋ {L({ chs: '笔记', en: 'Note' })}
-        </span>
+        variant === 'row' ? (
+          // A long axis repeats this control on every row. Keep the discoverable
+          // plus, but let the word and its border appear only when the row is
+          // hovered; 392 dashed boxes read as structure when there is none.
+          <span className="inline-flex items-center gap-1.5">
+            <span aria-hidden>＋</span>
+            <span className="hidden group-hover:inline">
+              {L({ chs: '笔记', en: 'Note' })}
+            </span>
+          </span>
+        ) : (
+          <span className="text-white/25">
+            ＋ {L({ chs: '笔记', en: 'Note' })}
+          </span>
+        )
       ) : (
-        <span className={variant === 'card' ? 'whitespace-pre-wrap text-white/60' : 'text-white/55'}>
+        <span className={variant === 'card' ? 'whitespace-pre-wrap text-white/60' : 'text-current'}>
           {text}
         </span>
       )}

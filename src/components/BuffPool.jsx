@@ -258,10 +258,10 @@ export default function BuffPool({
   return (
     <div className={`flex flex-col gap-3 ${className}`}>
       <div className="flex shrink-0 items-baseline justify-between">
-        <h2 className="text-xs font-bold uppercase tracking-wider text-white/50">
+        <h2 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/55">
           {L({ chs: '增益池', en: 'Buff Pool' })}
         </h2>
-        <span className="text-[10px] text-white/30">
+        <span className="text-[10px] tabular-nums text-white/40">
           {mode === 'instance'
             ? L({
               chs: instances.length ? `${instances.length} 个实例` : '尚无实例',

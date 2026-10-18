@@ -1525,9 +1525,9 @@ function Page() {
           />
 
           <div className="order-1 flex flex-col gap-3 lg:order-none">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex min-w-0 items-center gap-2">
-                <h2 className="shrink-0 text-xs font-bold uppercase tracking-wider text-white/50">
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/[0.06] bg-[#0d0e11] px-2 py-1.5">
+              <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                <h2 className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/55">
                   {L({ chs: '伤害轴', en: 'Damage Axis' })}
                 </h2>
 
@@ -1540,7 +1540,7 @@ function Page() {
                   data-axis-select
                   value={axesState.activeId}
                   onChange={(e) => selectAxis(e.target.value)}
-                  className="min-w-0 max-w-[220px] truncate rounded-lg border border-white/10 bg-[#141418] px-2 py-1 text-[11px] text-white outline-none transition-colors hover:border-white/25 focus:border-[#7fd4c1]/50"
+                  className="h-7 min-w-0 max-w-[220px] truncate rounded-lg border border-white/10 bg-[#17181c] px-2 py-0 text-[11px] text-zinc-100 outline-none transition-colors hover:border-white/25 focus:border-[#7fd4c1]/50"
                 >
                   {axesState.axes.map((a, i) => (
                     <option key={a.id} value={a.id}>
@@ -1554,7 +1554,7 @@ function Page() {
                   type="button"
                   onClick={() => setRenamingAxis(true)}
                   title={L({ chs: '重命名当前轴', en: 'Rename this axis' })}
-                  className="shrink-0 rounded-lg border border-white/10 px-2 py-1 text-[11px] text-white/40 transition-colors hover:border-white/25 hover:text-white/70"
+                  className="h-7 shrink-0 rounded-lg border border-white/10 px-2 py-0 text-[11px] text-white/50 transition-colors hover:border-white/25 hover:text-white/80"
                 >
                   {L({ chs: '重命名', en: 'Rename' })}
                 </button>
@@ -1579,10 +1579,10 @@ function Page() {
                     data-add-axis
                     aria-expanded={axisSourceOpen}
                     title={L({ chs: '新建轴：空白或复制现有的', en: 'New axis: blank, or copied from an existing one' })}
-                    className={`rounded-lg border px-2 py-1 text-[11px] transition-colors ${
+                    className={`h-7 rounded-lg border px-2 py-0 text-[11px] transition-colors ${
                       axisSourceOpen
                         ? 'border-[#7fd4c1]/50 bg-[#7fd4c1]/10 text-[#7fd4c1]'
-                        : 'border-white/10 text-white/40 hover:border-white/25 hover:text-white/70'
+                        : 'border-white/10 text-white/50 hover:border-white/25 hover:text-white/80'
                     }`}
                   >
                     {L({ chs: '+ 轴', en: '+ Axis' })} <span className="text-white/30">▾</span>
@@ -1646,13 +1646,13 @@ function Page() {
                     chs: axesState.axes.length > 1 ? '删除当前轴' : '重置当前轴（最后一个轴不能真正删除）',
                     en: axesState.axes.length > 1 ? 'Delete this axis' : 'Reset this axis (the last one cannot be removed)',
                   })}
-                  className="shrink-0 rounded-lg border border-white/10 px-2 py-1 text-[11px] text-white/40 transition-colors hover:border-red-400/40 hover:text-red-300"
+                  className="h-7 shrink-0 rounded-lg border border-white/10 px-2 py-0 text-[11px] text-white/50 transition-colors hover:border-red-400/40 hover:text-red-300"
                 >
                   {L({ chs: '删除', en: 'Delete' })}
                 </button>
 
                 {entries.length > 0 && (
-                  <span className="shrink-0 text-[11px] text-white/30">
+                  <span className="shrink-0 rounded-md bg-white/[0.05] px-2 py-1 text-[11px] tabular-nums text-white/45">
                     {entries.length} {L({ chs: '个条目', en: 'entries' })}
                   </span>
                 )}
@@ -1672,51 +1672,51 @@ function Page() {
                       chs: `把这 ${mergeableCount} 个条目合并为一个循环`,
                       en: `Merge these ${mergeableCount} entries into one loop`,
                     })}
-                    className="shrink-0 rounded-lg border border-[#7fd4c1]/40 bg-[#7fd4c1]/[0.06] px-2 py-1 text-[11px] text-[#7fd4c1] transition-colors hover:bg-[#7fd4c1]/[0.14]"
+                    className="h-7 shrink-0 rounded-lg border border-[#7fd4c1]/40 bg-[#7fd4c1]/[0.06] px-2 py-0 text-[11px] text-[#7fd4c1] transition-colors hover:bg-[#7fd4c1]/[0.14]"
                   >
                     {L({ chs: `合并为循环 (${mergeableCount})`, en: `Merge to loop (${mergeableCount})` })}
                   </button>
                 )}
               </div>
 
-              <div className="flex shrink-0 gap-2">
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
                 {entries.length > 0 && (
                   <button onClick={scrollToAxisBottom} data-scroll-axis-bottom
                           title={L({ chs: '跳到伤害轴末尾（含统计区）', en: 'Jump to the end of the damage axis (including summary)' })}
-                          className="rounded-lg border border-white/10 px-2.5 py-1 text-[11px] text-white/40 transition-colors hover:border-white/25 hover:text-white/70">
+                          className="h-7 rounded-lg border border-white/10 px-2.5 py-0 text-[11px] text-white/50 transition-colors hover:border-white/25 hover:text-white/80">
                     ↓ {L({ chs: '到底部', en: 'Bottom' })}
                   </button>
                 )}
                 {bulkUndo && (
                   <button onClick={revertBulk} data-bulk-revert
                           title={L({ chs: '恢复统一设置前的数值', en: 'Undo the last bulk apply' })}
-                          className="rounded-lg border border-[#e0a45c]/40 bg-[#e0a45c]/[0.08] px-2.5 py-1 text-[11px] text-[#e0a45c] transition-colors hover:bg-[#e0a45c]/[0.16]">
+                          className="h-7 rounded-lg border border-[#e0a45c]/40 bg-[#e0a45c]/[0.08] px-2.5 py-0 text-[11px] text-[#e0a45c] transition-colors hover:bg-[#e0a45c]/[0.16]">
                     {L({ chs: '恢复', en: 'Revert' })}
                   </button>
                 )}
                 {entries.length > 0 && (
                   <button onClick={() => setBulkOpen(true)} data-bulk-open
                           title={L({ chs: '一次设置所有条目的暴击模式与敌方数值', en: 'Set crit mode and enemy values for every entry at once' })}
-                          className="rounded-lg border border-white/15 px-2.5 py-1 text-[11px] text-white/55 transition-colors hover:border-[#7fd4c1]/50 hover:text-[#7fd4c1]">
+                          className="h-7 rounded-lg border border-white/15 px-2.5 py-0 text-[11px] text-white/60 transition-colors hover:border-[#7fd4c1]/50 hover:text-[#7fd4c1]">
                     {L({ chs: '统一设置', en: 'Bulk set' })}
                   </button>
                 )}
                 {entries.length > 0 && (
                   <button onClick={clearAll}
-                          className="rounded-lg border border-white/10 px-2.5 py-1 text-[11px] text-white/40 transition-colors hover:border-white/25 hover:text-white/70">
+                          className="h-7 rounded-lg border border-white/10 px-2.5 py-0 text-[11px] text-white/50 transition-colors hover:border-red-400/40 hover:text-red-300">
                     {L({ chs: '清空', en: 'Clear' })}
                   </button>
                 )}
                 {entries.length > 0 && (
                   <button onClick={toggleAll}
-                          className="rounded-lg border border-white/10 px-2.5 py-1 text-[11px] text-white/40 transition-colors hover:border-white/25 hover:text-white/70">
+                          className="h-7 rounded-lg border border-white/10 px-2.5 py-0 text-[11px] text-white/50 transition-colors hover:border-white/25 hover:text-white/80">
                     {allCollapsed
                       ? L({ chs: '展开一个', en: 'Expand one' })
                       : L({ chs: '全部收起', en: 'Collapse all' })}
                   </button>
                 )}
                 <button onClick={addEntry} data-add-entry
-                        className="rounded-lg border border-[#7fd4c1]/40 bg-[#7fd4c1]/10 px-3 py-1 text-[11px] font-medium text-[#7fd4c1] transition-colors hover:bg-[#7fd4c1]/20">
+                        className="h-7 rounded-lg border border-[#7fd4c1] bg-[#7fd4c1] px-3 py-0 text-[11px] font-semibold text-[#07110f] transition-colors hover:bg-[#9be4d5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7fd4c1]/60">
                   + {L({ chs: '添加条目', en: 'Add entry' })}
                 </button>
               </div>
