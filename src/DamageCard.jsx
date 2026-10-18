@@ -11,7 +11,7 @@ import { iconImg, talentIconImg, elementOf, ICON_WHITE } from './game';
 import CharacterArt from './components/CharacterArt.jsx';
 import { useI18n } from './i18n';
 import { foldBuffs, mergeStats } from './components/buff-model';
-import { computeDamage } from './lib/damage';
+import { computeDamage, normaliseScalingBasis, SCALING_BASES } from './lib/damage';
 import { DAMAGE_TYPES, KEY_SUFFIX, TYPE_ZH as ELEMENT_ZH } from './lib/elements';
 import { stageMultiplierText } from './char-sources';
 import { useDisplayPrecision, formatNumber } from './lib/display-prefs';
@@ -460,6 +460,14 @@ export default function DamageCard({
   // fine -- the card still switches for this mount.
   onCritModeChange = null,
   /**
+   * Which panel stat the talent multiplier reads. Missing means ATK, which is
+   * what every saved configuration written before this field existed means.
+   * The host stores the choice on the ENTRY, beside critMode and reactionKey,
+   * so collapsing the card does not silently reset it.
+   */
+  scalingBasis: scalingBasisProp = null,
+  onScalingBasisChange = null,
+  /**
    * The same two halves for the REACTION, which had the identical defect: the card
    * reported `reactionKey` but nothing ever read it back, so collapsing an entry
    * reset 融化/蒸发 to 无反应 along with it.
@@ -547,6 +555,14 @@ export default function DamageCard({
    */
   const stageMenuEnabled = !stageLocked;
   const [menuOpen, setMenuOpen] = useState(false);
+  const [ownScalingBasis, setOwnScalingBasis] = useState(() => normaliseScalingBasis(scalingBasisProp));
+  const scalingBasis = normaliseScalingBasis(scalingBasisProp ?? ownScalingBasis);
+  const selectedBasis = SCALING_BASES.find((basis) => basis.key === scalingBasis) || SCALING_BASES[0];
+  const setScalingBasis = (value) => {
+    const next = normaliseScalingBasis(value);
+    setOwnScalingBasis(next);
+    onScalingBasisChange?.(next);
+  };
   const [reactionKey, setReactionKeyState] = useState(reactionKeyProp || 'none');
   const setReactionKey = (k) => {
     setReactionKeyState(k);
@@ -764,8 +780,9 @@ export default function DamageCard({
         atkLevel,
         zoneMult,
         multZone,
+        basis: scalingBasis,
       }),
-    [effectiveStats, effectiveStage, reaction, critMode, hitElementName, atkLevel, zoneMult, multZone]
+    [effectiveStats, effectiveStage, reaction, critMode, hitElementName, atkLevel, zoneMult, multZone, scalingBasis]
   );
 
   // Publish the current selection + damage so a host can render a collapsed
@@ -788,6 +805,7 @@ export default function DamageCard({
       reaction,
       element: hitElementName,
       critMode,
+      scalingBasis,
       perHit: result.perHit,
       total: result.total,
       hits: effectiveStage.hits || 1,
@@ -808,7 +826,7 @@ export default function DamageCard({
       // re-parsing the text it does not have.
       parts: parts || null,
     });
-  }, [onSummary, source, stage, stageIdx, partIdx, parts, hitElementName, reaction, result, effectiveStage]);
+  }, [onSummary, source, stage, stageIdx, partIdx, parts, hitElementName, reaction, result, effectiveStage, scalingBasis]);
 
   const n = (v) => Math.round(v).toLocaleString('en-US');
   // ONE precision for the whole summary strip below, and it is now a SETTING
@@ -999,6 +1017,71 @@ export default function DamageCard({
         </div>
         )}
       </div>
+
+      {/* THE COEFFICIENT'S SOURCE. ATK is the historical meaning of every
+          multiplier in the app, so an old entry with no field selects it here
+          and computes exactly as before. HP / DEF / EM are per ENTRY (and per
+          compound part in the child cards) because one rotation can mix them. */}
+      {!sourceOnly && (
+        <div className="mt-2" data-scaling-basis-control>
+          <span className="mb-1 block text-[10px] uppercase tracking-wider text-white/40">
+            {L({ chs: '倍率类型', en: 'Scaling Stat' })}
+          </span>
+          {/* A native <select> cannot draw an image in its option list, so the
+              control is a small disclosure whose trigger and choices both show
+              the stat's own glyph. `data-scaling-basis` carries the VALUE for
+              tests and hosts that need to read it without parsing the label. */}
+          <details className="group relative" data-scaling-basis={scalingBasis}>
+            <summary
+              aria-haspopup="listbox"
+              className="flex cursor-pointer list-none items-center gap-2 rounded-xl border border-white/10 bg-[#141418] px-3 py-2 text-sm font-medium text-white outline-none transition-colors hover:border-white/20 [&::-webkit-details-marker]:hidden"
+            >
+              <img
+                src={iconImg(selectedBasis.icon)}
+                alt=""
+                className="h-4 w-4 shrink-0 object-contain opacity-85"
+                style={{ filter: ICON_WHITE }}
+              />
+              <span className="min-w-0 flex-1 text-left">{L(selectedBasis)}</span>
+              <span className="text-[10px] text-white/30 transition-transform group-open:rotate-180">▾</span>
+            </summary>
+            <div
+              role="listbox"
+              data-scaling-basis-menu
+              className="absolute left-0 right-0 top-[calc(100%+4px)] z-40 overflow-hidden rounded-xl border border-white/10 bg-[#141418] p-1 shadow-2xl shadow-black/80"
+            >
+              {SCALING_BASES.map((basis) => {
+                const on = basis.key === scalingBasis;
+                return (
+                  <button
+                    key={basis.key}
+                    type="button"
+                    role="option"
+                    aria-selected={on}
+                    data-scaling-basis-option={basis.key}
+                    onClick={(e) => {
+                      setScalingBasis(basis.key);
+                      e.currentTarget.closest('details')?.removeAttribute('open');
+                    }}
+                    className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors ${
+                      on ? 'bg-[#7fd4c1]/10 text-white' : 'text-white/65 hover:bg-white/5 hover:text-white'
+                    }`}
+                  >
+                    <img
+                      src={iconImg(basis.icon)}
+                      alt=""
+                      className="h-4 w-4 shrink-0 object-contain"
+                      style={{ filter: ICON_WHITE, opacity: on ? 1 : 0.7 }}
+                    />
+                    <span className="min-w-0 flex-1 truncate">{L(basis)}</span>
+                    {on && <span className="text-[10px] text-[#7fd4c1]">✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </details>
+        </div>
+      )}
     </div>
   );
 

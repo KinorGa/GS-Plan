@@ -11,6 +11,54 @@
 import { damageTypeSuffix } from './elements';
 
 /**
+ * The panel stat a talent multiplier reads.
+ *
+ * `atk` is the default because every configuration written before this existed
+ * assumed it. A missing, unknown or legacy-empty value therefore keeps its old
+ * arithmetic instead of becoming a validation error -- the compatibility rule
+ * lives here so the card, the axis, the merged expression and the optimiser all
+ * normalise the field the same way.
+ */
+export const SCALING_BASES = [
+  { key: 'atk', chs: '攻击力', en: 'ATK', icon: 'atk_base' },
+  { key: 'hp', chs: '生命值', en: 'HP', icon: 'hp_base' },
+  { key: 'def', chs: '防御力', en: 'DEF', icon: 'def_base' },
+  { key: 'em', chs: '元素精通', en: 'Elemental Mastery', icon: 'em' },
+];
+
+/** The algebra symbol each scaling source gets in the merged expression. */
+export const SCALING_SYMBOL = { atk: 'A', hp: 'H', def: 'D', em: 'M' };
+
+const BASIS_ALIASES = new Map([
+  ['atk', 'atk'], ['attack', 'atk'], ['攻击力', 'atk'],
+  ['hp', 'hp'], ['health', 'hp'], ['生命值', 'hp'],
+  ['def', 'def'], ['defense', 'def'], ['防御力', 'def'],
+  ['em', 'em'], ['mastery', 'em'], ['元素精通', 'em'],
+]);
+
+/** A stored value as one of the four keys; anything unrecognised means ATK. */
+export function normaliseScalingBasis(value) {
+  if (typeof value !== 'string') return 'atk';
+  return BASIS_ALIASES.get(value.trim().toLowerCase()) || BASIS_ALIASES.get(value.trim()) || 'atk';
+}
+
+/**
+ * The basis an entry uses, including the imported-stage fallback.
+ *
+ * Older files may carry `stage.basis` ("攻击力", ...) but no entry-level field.
+ * The entry field wins once the user has touched the dropdown; otherwise the
+ * imported declaration is honoured. `fallback` lets a compound child inherit
+ * its parent when neither the child nor its row says anything.
+ */
+export function entryScalingBasis(entry, fallback = 'atk') {
+  return normaliseScalingBasis(
+    entry?.scalingBasis
+      ?? entry?.summary?.stage?.basis
+      ?? fallback
+  );
+}
+
+/**
  * The DMG bonus a hit actually receives: its OWN element's field plus the generic
  * one.
  *
@@ -111,10 +159,16 @@ const resKey = (prefix, element) => {
  *                                 COEFFICIENT, so it sits inside `talent` and BEFORE
  *                                 附加伤害值 -- a +1000 附加伤害 is not doubled by
  *                                 "the multiplier is 2x". Defaults to 1.
+ * @param {string} [opts.basis]    Which panel stat the talent coefficient reads:
+ *                                 `atk` (the historical default), `hp`, `def` or
+ *                                 `em`.
  */
 export function computeDamage(
   stats,
-  { stage, reaction, element, critMode, atkLevel = 90, zoneMult = 1, multZone = 1 }
+  {
+    stage, reaction, element, critMode, atkLevel = 90, zoneMult = 1, multZone = 1,
+    basis = 'atk',
+  }
 ) {
   const {
     hp, atk, def, hpPct, atkPct, defPct, em, critRate, critDmg, er,
@@ -143,6 +197,12 @@ export function computeDamage(
   const totalHp = hp * (1 + hpPct / 100) + flatHp;
   const totalAtk = atk * (1 + atkPct / 100) + flatAtk;
   const totalDef = def * (1 + defPct / 100) + flatDef;
+  const scalingBasis = normaliseScalingBasis(basis);
+  const scalingValue =
+    scalingBasis === 'hp' ? totalHp
+      : scalingBasis === 'def' ? totalDef
+        : scalingBasis === 'em' ? em
+          : totalAtk;
 
   // 倍率乘区 rides the COEFFICIENT (`multZone`), inside the talent multiplier and
   // BEFORE 附加伤害值, because "the multiplier is 2.2x" is a claim about the
@@ -155,7 +215,7 @@ export function computeDamage(
   // the hit), and it is the order gcsim's calc events record
   // (`(total_scaling * talent + flat_dmg) * (1 + bonus_dmg) * ...`, verified
   // against every damage event in an export).
-  const base = totalAtk * talent + (stats.flatDmg || 0);
+  const base = scalingValue * talent + (stats.flatDmg || 0);
 
   // Amplifying reaction (Vaporize / Melt): 2.78 x EM / (EM + 1400),
   // plus any flat "reaction DMG bonus" the kit provides.
@@ -230,7 +290,7 @@ export function computeDamage(
   return {
     totalHp, totalAtk, totalDef, talent, emBonus, reactMult, critMult,
     defMult, resMult, bonusPct, withBonus, zoneMult, multZone, zoned, perHit,
-    total, er,
+    total, er, scalingBasis, scalingValue,
   };
 }
 

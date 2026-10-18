@@ -39,14 +39,15 @@ import {
   statMeta, useArtifacts,
 } from '../../../lib/artifact';
 import {
-  DEFAULT_HIT_SCALE, FEEDING_SUBSTATS, MAX_ROLLS_PER_LINE, MONO_ORDER, SYMBOL_LABEL,
-  UPGRADES_DEFAULT,
-  allowedSubstatsFor, buildProblem, defaultPieces, impliedHits, importPieces, monoFactors,
-  parseResult, pieceSpec, stripSubstats,
+  DEFAULT_HIT_SCALE, MAX_ROLLS_PER_LINE, MONO_ORDER, SYMBOL_LABEL, UPGRADES_DEFAULT,
+  allowedSubstatsFor, buildProblem, defaultPieces, emMattersIn, feedingSubstatsFor,
+  impliedHits, importPieces, monoFactors, parseResult, pieceSpec, scalingBasesOf,
+  stripSubstats,
 } from '../../../lib/artifact-optimize';
 import {
-  damageAt, evaluate, evaluateAmp, mergedExpression, panelOf, totalAtkOf, variablesOf,
+  damageAt, evaluate, evaluateAmp, mergedExpression, panelOf, variablesOf,
 } from '../../../lib/merged-expression';
+import { SCALING_SYMBOL } from '../../../lib/damage';
 import { StatGlyph, StatMenu } from './StatGlyph';
 
 /** Rows per page. The enumeration is ~100k wide; the DOM is not. */
@@ -121,6 +122,13 @@ function OptimizeDialog({ charId, build, optimize, onClose }) {
     talentDamage: optimize.talentDamage,
     charId,
   }), [optimize, charId]);
+
+  /** Which A/H/D/M symbols this character's merged polynomial actually uses. */
+  const scalingSymbols = useMemo(
+    () => scalingBasesOf(expr).map((key) => SCALING_SYMBOL[key]),
+    [expr]
+  );
+  const showEm = useMemo(() => emMattersIn(expr), [expr]);
 
   /** The panel without substats: the search's starting point. */
   const basePanel = useMemo(
@@ -221,11 +229,7 @@ function OptimizeDialog({ charId, build, optimize, onClose }) {
         // the user actually wears, so it must not be discounted by the roll scale:
         // the scale models UNKNOWN candidate rolls, and applying it here would make
         // the comparison row weaker than the build on screen and inflate every gain.
-        ref: curPanel
-          ? {
-            A: totalAtkOf(curPanel), C: curPanel.critDmg, R: curPanel.critRate, E: curPanel.em,
-          }
-          : null,
+        ref: curPanel ? variablesOf(curPanel) : null,
         pieces,
         hitScale,
       });
@@ -267,10 +271,7 @@ function OptimizeDialog({ charId, build, optimize, onClose }) {
   const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE));
   const view = sorted.slice(page * PAGE, page * PAGE + PAGE);
   const worn = curPanel
-    ? impliedHits(
-      basePanel, curPanel,
-      expr?.hasAmp ? [...FEEDING_SUBSTATS, 'em'] : FEEDING_SUBSTATS,
-    )
+    ? impliedHits(basePanel, curPanel, feedingSubstatsFor(expr))
     : 0;
 
   return createPortal(
@@ -424,11 +425,15 @@ function OptimizeDialog({ charId, build, optimize, onClose }) {
                   pageCount={pageCount}
                   setPage={setPage}
                   elapsed={elapsed}
-                  showEm={expr.hasAmp}
+                  showEm={showEm}
+                  panelSymbols={scalingSymbols}
                 />
               )}
 
-              <Expression expr={expr} basePanel={basePanel} curPanel={curPanel} L={L} />
+              <Expression
+                expr={expr} basePanel={basePanel} curPanel={curPanel} L={L}
+                panelSymbols={scalingSymbols}
+              />
             </>
           )}
         </div>
@@ -703,7 +708,8 @@ function Allocation({ row, L }) {
 }
 
 function Results({
-  L, result, best, current, order, setOrder, view, page, pageCount, setPage, elapsed, showEm,
+  L, result, best, current, order, setOrder, view, page, pageCount, setPage, elapsed,
+  showEm, panelSymbols,
 }) {
   // The headline must follow the SORT, not always the average. A crit-maximising
   // allocation deliberately trades average damage for crit damage, so showing its
@@ -780,12 +786,14 @@ function Results({
           </div>
           <p className="mt-1.5 text-[10px] leading-relaxed text-white/45">
             {L({
-              chs: 'A=' + fmt(current?.A) + ' · 暴击率=' + fmt(current?.R, 2) + '% · 暴伤=' + fmt(current?.C, 2)
-                + (showEm ? '% · 精通=' + fmt(current?.E) : '')
-                + '% · 期望=' + fmt(current?.avg) + ' · 暴击=' + fmt(current?.crit) + ' · 不暴击=' + fmt(current?.never),
-              en: 'A=' + fmt(current?.A) + ' crit rate=' + fmt(current?.R, 2) + '% crit dmg=' + fmt(current?.C, 2)
-                + (showEm ? '% EM=' + fmt(current?.E) : '')
-                + '% expected=' + fmt(current?.avg) + ' crit=' + fmt(current?.crit) + ' no crit=' + fmt(current?.never),
+              chs: panelSymbols.map((s) => s + '=' + fmt(current?.[s])).join(' · ')
+                + ' · 暴击率=' + fmt(current?.R, 2) + '% · 暴伤=' + fmt(current?.C, 2) + '%'
+                + (showEm ? ' · 精通=' + fmt(current?.E) : '')
+                + ' · 期望=' + fmt(current?.avg) + ' · 暴击=' + fmt(current?.crit) + ' · 不暴击=' + fmt(current?.never),
+              en: panelSymbols.map((s) => s + '=' + fmt(current?.[s])).join(' · ')
+                + ' crit rate=' + fmt(current?.R, 2) + '% crit dmg=' + fmt(current?.C, 2) + '%'
+                + (showEm ? ' EM=' + fmt(current?.E) : '')
+                + ' expected=' + fmt(current?.avg) + ' crit=' + fmt(current?.crit) + ' no crit=' + fmt(current?.never),
             })}
           </p>
           <p className="mt-1 text-[10px] leading-relaxed text-white/30">
@@ -812,7 +820,9 @@ function Results({
                 </th>
               ))}
               <th className="p-1 text-right">{L({ chs: '合计', en: 'rolls' })}</th>
-              <th className="p-1 text-right">A</th>
+              {panelSymbols.map((sym) => (
+                <th key={sym} className="p-1 text-right">{sym}</th>
+              ))}
               <th className="p-1 text-right">{L({ chs: '暴击率', en: 'CR' })}</th>
               <th className="p-1 text-right">{L({ chs: '暴伤', en: 'CD' })}</th>
               {showEm && <th className="p-1 text-right">{L({ chs: '精通', en: 'EM' })}</th>}
@@ -833,7 +843,9 @@ function Results({
                   </td>
                 ))}
                 <td className="p-1 text-right text-white/50">{row.total}</td>
-                <td className="p-1 text-right text-white/70">{fmt(row.A)}</td>
+                {panelSymbols.map((sym) => (
+                  <td key={sym} className="p-1 text-right text-white/70">{fmt(row[sym])}</td>
+                ))}
                 <td className="p-1 text-right text-white/70">{fmt(row.R, 2)}</td>
                 <td className="p-1 text-right text-white/70">{fmt(row.C, 2)}</td>
                 {showEm && <td className="p-1 text-right text-white/70">{fmt(row.E)}</td>}
@@ -892,7 +904,8 @@ function Results({
 
 /** The panel quantity each symbol stands for, as a stat key that HAS a glyph. */
 const SYMBOL_STAT = {
-  A: 'atk', U: 'anemoDmg', P: 'pyroDmg', C: 'critDmg', R: 'critRate', E: 'em',
+  A: 'atk', H: 'hp', D: 'def', M: 'em',
+  U: 'anemoDmg', P: 'pyroDmg', C: 'critDmg', R: 'critRate', E: 'em',
 };
 
 /**
@@ -906,6 +919,13 @@ const SYMBOL_STAT = {
 const BASE_MOVABLE = new Set(['A', 'C', 'R']);
 
 const fmtCoef = (x) => Number(Number(x).toPrecision(6)).toLocaleString('en-US');
+
+/** The used scaling values of a panel, as `A=...`, `H=...`, ... */
+const panelText = (panel, symbols) => {
+  if (!panel) return '-';
+  const values = variablesOf(panel);
+  return symbols.map((sym) => sym + '=' + fmt(values[sym])).join(' , ');
+};
 
 /** One panel quantity: its glyph, its name, and whether the search can move it. */
 function Var({ sym, L, size = 12, movableSet = BASE_MOVABLE }) {
@@ -986,12 +1006,13 @@ function CoeffList({ title, sub, coeffs, L, accent, movableSet = BASE_MOVABLE })
   );
 }
 
-function Expression({ expr, basePanel, curPanel, L }) {
+function Expression({ expr, basePanel, curPanel, L, panelSymbols }) {
   const never = expr.coeffs.never || {};
   const crit = expr.coeffs.crit || {};
   const ampNever = expr.coeffs.ampNever || [];
   const ampCrit = expr.coeffs.ampCrit || [];
-  const movableSet = new Set([...BASE_MOVABLE, ...(expr.hasAmp ? ['E'] : [])]);
+  const emMatters = emMattersIn(expr);
+  const movableSet = new Set(['C', 'R', ...panelSymbols, ...(expr.hasAmp ? ['E'] : [])]);
   // The panel's own variables AT THE WORN BUILD, so the master formula can be
   // shown as ARITHMETIC and not just as symbols: the weights and the per-group
   // contributions are what turn the abstract Sigma into something checkable.
@@ -1022,24 +1043,36 @@ function Expression({ expr, basePanel, curPanel, L }) {
 
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-white/[0.06] bg-white/[0.015] px-2 py-1.5">
         <span className="text-[9px] text-white/30">{L({ chs: '面板变量', en: 'panel' })}</span>
-        {['A', 'U', 'P', 'G', 'C', 'R', ...(expr.hasAmp ? ['E'] : [])].map((s) => (
+        {[...panelSymbols, 'U', 'P', 'G', 'C', 'R', ...(emMatters ? ['E'] : [])].map((s) => (
           <Var key={s} sym={s} L={L} size={13} movableSet={movableSet} />
         ))}
         <span className="ml-auto text-[9px] text-white/30">
           {L({
-            chs: 'A = 基础攻击 x (1 + 攻击力% / 100) + 固定攻击',
-            en: 'A = base ATK x (1 + ATK% / 100) + flat ATK',
+            chs: panelSymbols.map((s) => s + ' = ' + {
+              A: '基础攻击 x (1 + 攻击力% / 100) + 固定攻击',
+              H: '基础生命 x (1 + 生命值% / 100) + 固定生命',
+              D: '基础防御 x (1 + 防御力% / 100) + 固定防御',
+              M: '元素精通',
+            }[s]).join('；'),
+            en: panelSymbols.map((s) => s + ' = ' + {
+              A: 'base ATK x (1 + ATK% / 100) + flat ATK',
+              H: 'base HP x (1 + HP% / 100) + flat HP',
+              D: 'base DEF x (1 + DEF% / 100) + flat DEF',
+              M: 'Elemental Mastery',
+            }[s]).join('; '),
           })}
         </span>
       </div>
       <p className="mt-1.5 text-[10px] leading-relaxed text-white/45">
         <span className="text-[#7fd4c1]">■</span>{' '}
         {L({
-          chs: '亮色的会被副词条推动（攻击力%、暴击率、暴伤'
-            + (expr.hasAmp ? '、元素精通' : '')
+          chs: '亮色的会被副词条推动（' + panelSymbols.map((s) => ({ A: '攻击力', H: '生命值', D: '防御力', M: '元素精通' }[s])).join('、')
+            + '、暴击率、暴伤'
+            + (emMatters ? '、元素精通' : '')
             + '）；风伤 / 火伤 / 增伤不在副词条池里，本次搜索中是常数——只由它们组成的项对所有候选都一样，不决定谁更优。',
-          en: 'Teal quantities are what a substat roll moves (ATK%, CRIT Rate, CRIT DMG'
-            + (expr.hasAmp ? ', EM' : '')
+          en: 'Teal quantities are what a substat roll moves (' + panelSymbols.map((s) => ({ A: 'ATK', H: 'HP', D: 'DEF', M: 'EM' }[s])).join(', ')
+            + ', CRIT Rate, CRIT DMG'
+            + (emMatters ? ', EM' : '')
             + '). Anemo / Pyro / generic DMG bonus is not in the substat pool, so it is constant here and a term built only from those is the same for every candidate.',
         })}
       </p>
@@ -1220,11 +1253,11 @@ function Expression({ expr, basePanel, curPanel, L }) {
       <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-0.5 text-[10px] text-white/45">
         <div>
           {L({ chs: '搜索基线（去掉副词条）', en: 'Search baseline (substats removed)' })}
-          {': A=' + fmt(basePanel?.atk) + ' , 暴击率=' + fmt(basePanel?.critRate, 2) + '% , 暴伤=' + fmt(basePanel?.critDmg, 2) + '%'}
+          {': ' + panelText(basePanel, panelSymbols) + ' , 暴击率=' + fmt(basePanel?.critRate, 2) + '% , 暴伤=' + fmt(basePanel?.critDmg, 2) + '%'}
         </div>
         <div>
           {L({ chs: '当前面板', en: 'Current panel' })}
-          {': A=' + fmt(curPanel && totalAtkOf(curPanel)) + ' , 暴击率=' + fmt(curPanel?.critRate, 2) + '% , 暴伤=' + fmt(curPanel?.critDmg, 2) + '%'}
+          {': ' + panelText(curPanel, panelSymbols) + ' , 暴击率=' + fmt(curPanel?.critRate, 2) + '% , 暴伤=' + fmt(curPanel?.critDmg, 2) + '%'}
         </div>
       </div>
     </details>

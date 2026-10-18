@@ -60,16 +60,17 @@ const problem = buildProblem({
 });
 const hasLine = (prefix) => problem.split('\n').some((l) => l.startsWith(prefix));
 
-ok('the panel is written', problem.split('\n')[1] === 'panel 800 50 300 5 50 0 0 0 0');
+ok('the panel is written', problem.split('\n')[1] === 'panel 800 50 300 5 50 0 0 0 0 0 0 0 0 0 0',
+  problem.split('\n')[1]);
 ok('every substat is declared, so the columns never move', problem.split('\n').filter((l) => l.startsWith('hit ')).length === 10);
 ok('each piece states its shape', hasLine('piece flower 4 9 6') && hasLine('piece plume 4 8 6'));
 ok('a disabled substat is simply left out', !hasLine('allow plume critDmg'));
 ok('a required substat is state 2', hasLine('allow plume atkPct 2'));
 ok('an optional substat is state 1', hasLine('allow plume critRate 1'));
 ok('the main stat is never allowed on its own piece', !hasLine('allow plume atk '));
-ok('the coefficient vectors are 16 wide', problem.split('\n').filter((l) => l.startsWith('coeff never '))[0].trim().split(/\s+/).length === 18);
+ok('the coefficient vectors are 40 wide', problem.split('\n').filter((l) => l.startsWith('coeff never '))[0].trim().split(/\s+/).length === MONO_ORDER.length + 2);
 ok('the average groups carry their crit-rate buff', hasLine('group 20 '));
-ok('the comparison row is written last', hasLine('ref 1500 200 60'));
+ok('the comparison row is written last', hasLine('ref 1500 0 0 0 200 60 0'));
 
 // Every key of MONO_ORDER that is present must land at ITS OWN index.
 const probe = {}; MONO_ORDER.forEach((k, i) => { probe[k] = i + 1; });
@@ -80,10 +81,14 @@ ok('a missing key is an explicit 0', coeffVector({ 1: 1 })[4] === 0);
 // The order the C++ declares is the order this module writes. Read it from the
 // comment rather than trusting a copy.
 const cpp = fs.readFileSync(path.join('native', 'optimize', 'main.cpp'), 'utf8');
-const declared = cpp.match(/^\/\/\s+1 U P G C[^\n]*$/m);
+const declaredBlock = cpp.match(/\/\/\s+1 U P G C[\s\S]*?\/\/\s+M[^\n]*/);
+const declared = declaredBlock && declaredBlock[0]
+  .split(/\r?\n/)
+  .map((line) => line.replace(/^\s*\/\/\s*/, '').trim())
+  .join(' ');
 ok('main.cpp declares the same monomial order',
-  !!declared && declared[0].replace('//', '').trim().split(/\s+/).join(',') === MONO_ORDER.join(','),
-  declared ? declared[0] : 'no order line found');
+  !!declared && declared.split(/\s+/).join(',') === MONO_ORDER.join(','),
+  declared || 'no order line found');
 
 const csv = [
   'critRate,critDmg,total,A,C,R,E,dmg_never,dmg_crit,dmg_avg,is_current',
@@ -164,8 +169,8 @@ if (!fs.existsSync(EXE)) {
       for (const k of pc.allowed) lines.push('allow ' + pc.slot + ' ' + k + ' ' + (pc.required.includes(k) ? 2 : 1));
     }
     // f = A, and only A: every fixture difference is visible in the panel.
-    lines.push('coeff never 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0');
-    lines.push('coeff crit 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0');
+    lines.push('coeff never ' + coeffVector({ A: 1 }).join(' '));
+    lines.push('coeff crit ' + coeffVector({ A: 1 }).join(' '));
     return lines.join('\n') + '\n';
   })();
 
@@ -276,7 +281,7 @@ if (!fs.existsSync(EXE)) {
 
       // The comparison row IS the worn panel, at ANY roll scale: the scale models
       // hypothetical candidate rolls, not the build the user actually wears.
-      const ref = { A: totalAtkOf(cur), C: cur.critDmg, R: cur.critRate, E: cur.em };
+      const ref = variablesOf(cur);
       ok('the comparison panel is the worn panel',
         Math.abs(ref.A - totalAtkOf(cur)) < 1e-9
         && Math.abs(ref.C - cur.critDmg) < 1e-9
@@ -360,6 +365,43 @@ if (!fs.existsSync(EXE)) {
         rel(physAt.avg, totalForChar(physRows)) < 1e-9,
         physAt.avg + ' vs ' + totalForChar(physRows));
 
+      // Deterministic random panels used by every selfCheck below.
+      const seeded = () => {
+        let state = 0x9e3779b9;
+        return () => {
+          state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+          return state / 4294967296;
+        };
+      };
+
+      // HP / DEF / EM scaling must produce the SAME algebra, not a product with
+      // ATK. selfCheck compares each against computeAxis on random panels, which
+      // includes the raw HP%/flat HP and DEF%/flat DEF inputs those symbols read.
+      const withBasis = (list, basis) => list.map((e) => {
+        const here = e.charId === charId;
+        const out = here ? { ...e, scalingBasis: basis } : e;
+        if (Array.isArray(e.children)) {
+          out.children = e.children.map((c) => (
+            here ? { ...c, scalingBasis: basis } : c
+          ));
+        }
+        return out;
+      });
+      let exprHp = null;
+      let hpRows = null;
+      for (const basis of ['hp', 'def', 'em']) {
+        const rows = withBasis(entries, basis);
+        const exprBasis = mergedExpression({ entries: rows, team, catalogue, talentDamage, charId });
+        ok('the merge records ' + basis + ' as a coefficient source',
+          exprBasis?.scalingBases?.includes(basis), JSON.stringify(exprBasis?.scalingBases));
+        const worst = selfCheck(exprBasis, {
+          entries: rows, team, catalogue, talentDamage, samples: 3, rng: seeded(),
+        });
+        ok('selfCheck agrees with ' + basis + ' scaling',
+          Math.max(worst.never, worst.crit, worst.avg) < 1e-9, JSON.stringify(worst));
+        if (basis === 'hp') { exprHp = exprBasis; hpRows = rows; }
+      }
+
       // Amplifying reactions depend on EM rationally. The expression carries the
       // polynomial part separately and must match at MORE THAN the baseline EM.
       const ampRows = forced(entries, { reactionKey: 'vaporize', critMode: 'avg' });
@@ -376,14 +418,6 @@ if (!fs.existsSync(EXE)) {
           rel(got, want) < 1e-9, got + ' vs ' + want);
       }
 
-      // Deterministic random panels, including EM, against the engine itself.
-      const seeded = () => {
-        let state = 0x9e3779b9;
-        return () => {
-          state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
-          return state / 4294967296;
-        };
-      };
       const loopWorst = selfCheck(exprLoop, {
         entries: loopEntries, team, catalogue, talentDamage, samples: 4, rng: seeded(),
       });
@@ -417,7 +451,7 @@ if (!fs.existsSync(EXE)) {
       let ampWorstBinary = 0;
       for (const row of ampRes.rows.filter((r) => r.hasHits)) {
         const want = damageAt(exprAmp, {
-          A: row.A, C: row.C, R: row.R, E: row.E,
+          A: row.A, H: row.H, D: row.D, M: row.M, C: row.C, R: row.R, E: row.E,
           U: base.anemoDmg, P: base.pyroDmg, G: base.dmgBonus,
         });
         ampWorstBinary = Math.max(ampWorstBinary, rel(row.avg, want.avg));
@@ -426,6 +460,36 @@ if (!fs.existsSync(EXE)) {
         'worst rel ' + ampWorstBinary.toExponential(2));
       ok('an EM roll produces a distinct outcome',
         new Set(ampRes.rows.filter((r) => r.hasHits).map((r) => r.E.toFixed(3))).size > 1);
+
+      // HP scaling is a SEARCH DIMENSION: HP%/flat HP must reach the native
+      // evaluator, and every returned row must still equal the merged expression.
+      const hpPiece = pieceSpec({
+        slotKey: 'flower', mainStat: 'atk', upgrades: 0, lines: 2, maxPerLine: 2,
+        allows: [
+          { key: 'hpPct', state: 1 }, { key: 'hp', state: 1 },
+          { key: 'critRate', state: 1 }, { key: 'critDmg', state: 1 },
+        ],
+      });
+      const hpPath = tmp('hp-scaling');
+      fs.writeFileSync(hpPath, buildProblem({
+        expr: exprHp, panel: base, pieces: [hpPiece], hitScale: 1,
+      }));
+      const hpOut = execFileSync(EXE, [hpPath], { encoding: 'utf8', maxBuffer: 1 << 30 });
+      fs.rmSync(hpPath, { force: true });
+      const hpRes = parseResult(hpOut);
+      let hpWorst = 0;
+      for (const row of hpRes.rows.filter((r) => r.hasHits)) {
+        const want = damageAt(exprHp, {
+          A: row.A, H: row.H, D: row.D, M: row.M, C: row.C, R: row.R, E: row.E,
+          U: base.anemoDmg, P: base.pyroDmg, G: base.dmgBonus,
+        });
+        hpWorst = Math.max(hpWorst, rel(row.avg, want.avg));
+      }
+      ok('the binary carries HP scaling through the polynomial', hpWorst < 1e-8,
+        'worst rel ' + hpWorst.toExponential(2));
+      ok('an HP roll produces a distinct outcome',
+        new Set(hpRes.rows.filter((r) => r.hasHits).map((r) => r.H.toFixed(3))).size > 1);
+      ok('the HP expression and HP rows are available', !!exprHp && !!hpRows);
 
       const run = (piecesSpec, name) => {
         const text = buildProblem({ expr: expr2, panel: base, ref, pieces: piecesSpec, hitScale: 1 });
@@ -443,7 +507,7 @@ if (!fs.existsSync(EXE)) {
       ok('the reference row is present', !!refRow);
       if (refRow) {
         const V = {
-          A: ref.A, C: ref.C, R: ref.R, E: ref.E,
+          A: ref.A, H: ref.H, D: ref.D, M: ref.M, C: ref.C, R: ref.R, E: ref.E,
           U: base.anemoDmg, P: base.pyroDmg, G: base.dmgBonus,
         };
         const rel = (a, b) => Math.abs(a - b) / Math.max(1, Math.abs(b));
@@ -460,7 +524,7 @@ if (!fs.existsSync(EXE)) {
       for (const row of res.rows) {
         if (!row.hasHits) continue;
         const V = {
-          A: row.A, C: row.C, R: row.R, E: row.E,
+          A: row.A, H: row.H, D: row.D, M: row.M, C: row.C, R: row.R, E: row.E,
           U: base.anemoDmg, P: base.pyroDmg, G: base.dmgBonus,
         };
         const want = damageAt(expr2, V);

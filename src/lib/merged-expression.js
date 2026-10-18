@@ -15,9 +15,9 @@
 //   `computeAxis` rather than trusting the algebra.
 //
 // WHAT THE PANEL VOCABULARY IS
-//   `A`, `U`, `P`, `G`, `C`, `R` are the only panel quantities damage reads:
-//   total ATK, Anemo DMG, Pyro DMG, the generic DMG bonus, CRIT DMG and CRIT
-//   Rate. The expression is therefore exact for ANY build, and the optimiser
+//   `A`, `H`, `D`, `M`, `U`, `P`, `G`, `C`, `R` are the panel quantities damage
+//   reads: total ATK / HP / DEF / EM, Anemo DMG, Pyro DMG, the generic DMG bonus,
+//   CRIT DMG and CRIT Rate. The expression is therefore exact for ANY build, and the optimiser
 //   never re-derives it -- as long as the BUFF CARDS stay put. Buffs land on the
 //   ROWS (`drops`), not on the panel, so changing an artifact SET changes the
 //   coefficients; see `setSensitive`.
@@ -31,7 +31,7 @@
 //   rate cards sitting on most rows are CONSTANTS: they move where the clamp
 //   bites (rate 80 and 100), not whether a row is variable.
 
-import { computeDamage } from './damage';
+import { computeDamage, entryScalingBasis, SCALING_SYMBOL } from './damage';
 import {
   computeAxis, createContext, panelForEntry, sourcesForEntry,
 } from './axis-compute';
@@ -44,7 +44,8 @@ import { flatten } from './rotation-segment';
 
 /** Panel keys the expression is a function of -- an override on one of these is a trap. */
 export const PANEL_KEYS = [
-  'atk', 'atkPct', 'flatAtk', 'critRate', 'critDmg',
+  'atk', 'atkPct', 'flatAtk', 'hp', 'hpPct', 'flatHp', 'def', 'defPct', 'flatDef',
+  'critRate', 'critDmg',
   'anemoDmg', 'pyroDmg', 'dmgBonus', 'em',
 ];
 
@@ -71,7 +72,7 @@ function partsOf(entry, ctx) {
   const sources = sourcesForEntry(entry, ctx);
   if (!sources.length) return [];
 
-  const mk = (partIndex, element, drops, overrides, multOv, hitsOv) => {
+  const mk = (partIndex, element, drops, overrides, multOv, hitsOv, basis) => {
     const sel = entry.summary;
     const src = sources.find((s) => s.key === (sel?.sourceKey || entry.picked?.sourceKey)) || sources[0];
     const stageIndex = sel?.stageIndex ?? entry.picked?.stageIndex ?? 0;
@@ -103,10 +104,11 @@ function partsOf(entry, ctx) {
       zoneMult,
       multZone,
       atkLevel: Number(char?.level) || 90,
+      basis,
     });
     if (!r) return null;
 
-    // base = atk*talent + flatDmg; dividing the bonus back out unwraps it
+    // base = scaling*talent + flatDmg; dividing the bonus back out unwraps it
     // without the engine having to hand `flatDmg` over separately.
     const baseVal = r.withBonus / (1 + r.bonusPct / 100);
     const ownKey = usedElement === 'Anemo' ? 'anemoDmg' : usedElement === 'Pyro' ? 'pyroDmg' : null;
@@ -129,8 +131,10 @@ function partsOf(entry, ctx) {
     return {
       element: usedElement,
       t: r.talent,
-      f: baseVal - r.totalAtk * r.talent,
-      aRow: r.totalAtk,
+      f: baseVal - r.scalingValue * r.talent,
+      aRow: r.scalingValue,
+      scalingBasis: r.scalingBasis,
+      symbol: SCALING_SYMBOL[r.scalingBasis] || 'A',
       // Everything panel-independent: defence, resistance, the user's own
       // multiplier zone, the reaction factor, the hit count. An amplifying
       // reaction's EM factor is deliberately NOT here: it is rational in EM, so
@@ -162,13 +166,14 @@ function partsOf(entry, ctx) {
       .map((c) => mk(
         c.partIndex, c.element || null, c.drops, c.statOverrides,
         c.scaling?.mult, c.scaling?.hits,
+        entryScalingBasis(c, entryScalingBasis(entry)),
       ))
       .filter(Boolean);
   }
   return [
     mk(
       entry.summary?.partIndex || 0, entry.element || null, entry.drops, null,
-      entry.scaling?.mult, entry.scaling?.hits,
+      entry.scaling?.mult, entry.scaling?.hits, entryScalingBasis(entry),
     ),
   ].filter(Boolean);
 }
@@ -204,6 +209,12 @@ export function panelOf(team, catalogue, charId, artifacts) {
     atk: values.atk,
     atkPct: values.atkPct,
     flatAtk: values.flatAtk,
+    hp: values.hp,
+    hpPct: values.hpPct,
+    flatHp: values.flatHp || 0,
+    def: values.def,
+    defPct: values.defPct,
+    flatDef: values.flatDef || 0,
     critRate: values.critRate,
     critDmg: values.critDmg,
     anemoDmg: values.anemoDmg || 0,
@@ -217,10 +228,26 @@ export function panelOf(team, catalogue, charId, artifacts) {
 export const totalAtkOf = (panel) =>
   panel.atk * (1 + panel.atkPct / 100) + panel.flatAtk;
 
-/** The panel's `A`, `U`, `P`, `G`, `C`, `R`, `E` -- what the rows are merged over. */
+/** `H` from a panel: `health * (1 + HP%/100) + flat HP`. */
+export const totalHpOf = (panel) =>
+  (panel.hp || 0) * (1 + (panel.hpPct || 0) / 100) + (panel.flatHp || 0);
+
+/** `D` from a panel: `defence * (1 + DEF%/100) + flat DEF`. */
+export const totalDefOf = (panel) =>
+  (panel.def || 0) * (1 + (panel.defPct || 0) / 100) + (panel.flatDef || 0);
+
+/**
+ * The panel's `A`, `H`, `D`, `M`, `U`, `P`, `G`, `C`, `R`, `E` -- what the rows
+ * are merged over. Only the scaling symbols actually used by an entry appear in
+ * its polynomial, but returning all four keeps the evaluator and the optimiser
+ * indifferent to which kind of row is present.
+ */
 export function variablesOf(panel) {
   return {
     A: totalAtkOf(panel),
+    H: totalHpOf(panel),
+    D: totalDefOf(panel),
+    M: panel.em || 0,
     U: panel.anemoDmg || 0,
     P: panel.pyroDmg || 0,
     G: panel.dmgBonus || 0,
@@ -241,12 +268,14 @@ export function variablesOf(panel) {
  * that is the whole merge: a sum of sums. `mono` is '' for the constant term,
  * which is why the key building below looks the way it does.
  */
-function accumulate(rows, a0, qOf, filter, weightOf = (row) => row.rest) {
+function accumulate(rows, a0BySymbol, qOf, filter, weightOf = (row) => row.rest) {
   const coeffs = {};
   const add = (k, v) => { if (v) coeffs[k] = (coeffs[k] || 0) + v; };
 
   for (const row of rows) {
     if (filter && !filter(row)) continue;
+    const symbol = row.symbol || 'A';
+    const a0 = Number(a0BySymbol?.[symbol]) || 0;
     const fp = (row.aRow - a0) * row.t + row.f;
     const weight = weightOf(row);
     if (!weight) continue;
@@ -262,10 +291,10 @@ function accumulate(rows, a0, qOf, filter, weightOf = (row) => row.rest) {
       if (!c) continue;
       const k = weight * c;
       add(mono || '1', k * fp * q1);
-      add(mono ? `A*${mono}` : 'A', k * row.t * q1);
+      add(mono ? `${symbol}*${mono}` : symbol, k * row.t * q1);
       if (qC) {
         add(mono ? `${mono}*C` : 'C', k * fp * qC);
-        add(mono ? `A*${mono}*C` : 'A*C', k * row.t * qC);
+        add(mono ? `${symbol}*${mono}*C` : `${symbol}*C`, k * row.t * qC);
       }
     }
   }
@@ -291,7 +320,7 @@ export function evaluateAmp(groups, v) {
 }
 
 /** Rows that share an EM buff can share one `emFactor`; group them by it. */
-function ampGroupsOf(rows, a0, qOf, filter) {
+function ampGroupsOf(rows, a0BySymbol, qOf, filter) {
   const keys = [...new Set(rows
     .filter((r) => r.amp && (!filter || filter(r)))
     .map((r) => Math.round(r.emBuff * 1e6) / 1e6))]
@@ -299,7 +328,7 @@ function ampGroupsOf(rows, a0, qOf, filter) {
   return keys.map((emBuff) => ({
     emBuff,
     coeffs: accumulate(
-      rows, a0, qOf,
+      rows, a0BySymbol, qOf,
       (r) => r.amp && Math.abs(r.emBuff - emBuff) < 1e-6 && (!filter || filter(r)),
       (r) => r.ampBase,
     ),
@@ -309,14 +338,25 @@ function ampGroupsOf(rows, a0, qOf, filter) {
 /** Evaluate a coefficient set at one point of the panel. `R` is not used here. */
 export function evaluate(coeffs, v) {
   const {
-    A = 0, U = 0, P = 0, G = 0, C = 0,
+    A = 0, H = 0, D = 0, M = 0, U = 0, P = 0, G = 0, C = 0,
   } = v || {};
   const m = {
     '1': 1, U, P, G, C,
     'U*C': U * C, 'P*C': P * C, 'G*C': G * C,
-    A, 'A*U': A * U, 'A*P': A * P, 'A*G': A * G, 'A*C': A * C,
-    'A*U*C': A * U * C, 'A*P*C': A * P * C, 'A*G*C': A * G * C,
   };
+  // Every scaling source expands the same eight-term block: a constant, the
+  // three DMG-bonus quantities, CRIT DMG, and their products. A / H / D / M are
+  // mutually exclusive per row but a character may mix them across entries.
+  for (const [sym, value] of [['A', A], ['H', H], ['D', D], ['M', M]]) {
+    m[sym] = value;
+    m[`${sym}*U`] = value * U;
+    m[`${sym}*P`] = value * P;
+    m[`${sym}*G`] = value * G;
+    m[`${sym}*C`] = value * C;
+    m[`${sym}*U*C`] = value * U * C;
+    m[`${sym}*P*C`] = value * P * C;
+    m[`${sym}*G*C`] = value * G * C;
+  }
   let sum = 0;
   for (const [k, c] of Object.entries(coeffs)) sum += c * (m[k] || 0);
   return sum;
@@ -386,12 +426,17 @@ export function mergedExpression({
 
   const base = panelOf(team, catalogue, charId);
   if (!base) return null;
-  const a0 = totalAtkOf(base);
+  const a0BySymbol = {
+    A: totalAtkOf(base),
+    H: totalHpOf(base),
+    D: totalDefOf(base),
+    M: base.em || 0,
+  };
 
-  const never = accumulate(rows, a0, () => ({ q1: 1, qC: 0 }));
-  const crit = accumulate(rows, a0, (r) => ({ q1: 1 + r.cdBuff / 100, qC: 1 / 100 }));
-  const ampNever = ampGroupsOf(rows, a0, () => ({ q1: 1, qC: 0 }));
-  const ampCrit = ampGroupsOf(rows, a0, (r) => ({ q1: 1 + r.cdBuff / 100, qC: 1 / 100 }));
+  const never = accumulate(rows, a0BySymbol, () => ({ q1: 1, qC: 0 }));
+  const crit = accumulate(rows, a0BySymbol, (r) => ({ q1: 1 + r.cdBuff / 100, qC: 1 / 100 }));
+  const ampNever = ampGroupsOf(rows, a0BySymbol, () => ({ q1: 1, qC: 0 }));
+  const ampCrit = ampGroupsOf(rows, a0BySymbol, (r) => ({ q1: 1 + r.cdBuff / 100, qC: 1 / 100 }));
 
   // One `delta` group per distinct CRIT-RATE buff, because the clamp makes rows
   // non-fungible: one at `R + 20` stops gaining at `R = 80`, one at `R` at 100.
@@ -400,12 +445,12 @@ export function mergedExpression({
   const avgGroups = buffs.map((crBuff) => ({
     crBuff,
     delta: accumulate(
-      rows, a0,
+      rows, a0BySymbol,
       (r) => ({ q1: r.cdBuff / 100, qC: 1 / 100 }),
       (r) => Math.abs(r.crBuff - crBuff) < 1e-6,
     ),
     amp: ampGroupsOf(
-      rows, a0,
+      rows, a0BySymbol,
       (r) => ({ q1: r.cdBuff / 100, qC: 1 / 100 }),
       (r) => Math.abs(r.crBuff - crBuff) < 1e-6,
     ),
@@ -425,6 +470,13 @@ export function mergedExpression({
     charId,
     entries: entryCount,
     parts: rows.length,
+    // Which coefficient sources this particular character actually uses. The
+    // optimiser reads it to expose only the HP/DEF/EM substats that can move a
+    // number, and the UI uses it to label the polynomial without listing terms
+    // that are identically zero.
+    scalingBases: ['atk', 'hp', 'def', 'em'].filter(
+      (key) => rows.some((row) => row.scalingBasis === key)
+    ),
     base,
     variables: variablesOf(base),
     coeffs: { never, crit, avgGroups, ampNever, ampCrit },
@@ -496,6 +548,10 @@ export function selfCheck(expr, {
     const over = {
       atkPct: b.atkPct + rnd(-100, 150),
       flatAtk: b.flatAtk + rnd(-370, 600),
+      hpPct: (b.hpPct || 0) + rnd(-30, 120),
+      flatHp: (b.flatHp || 0) + rnd(-2000, 6000),
+      defPct: (b.defPct || 0) + rnd(-30, 120),
+      flatDef: (b.flatDef || 0) + rnd(-200, 800),
       critDmg: b.critDmg + rnd(-200, 300),
       critRate: rnd(5, 110),
       anemoDmg: rnd(-20, 150),
@@ -505,6 +561,9 @@ export function selfCheck(expr, {
     };
     const v = {
       A: b.atk * (1 + over.atkPct / 100) + over.flatAtk,
+      H: totalHpOf({ ...b, ...over }),
+      D: totalDefOf({ ...b, ...over }),
+      M: over.em,
       U: over.anemoDmg,
       P: over.pyroDmg,
       G: over.dmgBonus,

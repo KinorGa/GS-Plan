@@ -53,13 +53,64 @@ export const MAX_ROLLS_PER_LINE = 6;
 /**
  * The substats whose rolls move the damage panel AT ALL.
  *
- * 'damage.js' reads total ATK, CRIT Rate and CRIT DMG, plus EM when an amplifying
- * reaction is present. HP, DEF and Energy Recharge spend a line and change no
- * number, and so does EM on a non-reaction axis. They are still selectable -- a
- * piece HAS four lines and the junk ones have to be named -- but the default search
- * only treats these four as damage-producing.
+ * Kept as the historical ATK-only set. A live run uses `feedingSubstatsFor`,
+ * which adds HP%, flat HP, DEF%, flat DEF and EM according to the merged
+ * expression. Energy Recharge still spends a line and changes no damage number.
  */
 export const FEEDING_SUBSTATS = ['atkPct', 'atk', 'critRate', 'critDmg'];
+
+/** The scaling sources one merged expression actually contains. */
+export function scalingBasesOf(expr) {
+  if (Array.isArray(expr?.scalingBases) && expr.scalingBases.length) {
+    return expr.scalingBases;
+  }
+  // Older callers and test fixtures predate `scalingBases`. Infer the sources
+  // from the non-zero monomials so an H/D/M expression still opens correctly.
+  const found = new Set();
+  const maps = [
+    expr?.coeffs?.never, expr?.coeffs?.crit,
+    ...(expr?.coeffs?.avgGroups || []).flatMap((g) => [
+      g.delta, ...(g.amp || []).map((a) => a.coeffs),
+    ]),
+    ...(expr?.coeffs?.ampNever || []).map((a) => a.coeffs),
+    ...(expr?.coeffs?.ampCrit || []).map((a) => a.coeffs),
+  ];
+  for (const coeffs of maps) {
+    for (const key of Object.keys(coeffs || {})) {
+      if (!coeffs[key]) continue;
+      if (key === 'A' || key.startsWith('A*')) found.add('atk');
+      if (key === 'H' || key.startsWith('H*')) found.add('hp');
+      if (key === 'D' || key.startsWith('D*')) found.add('def');
+      if (key === 'M' || key.startsWith('M*')) found.add('em');
+    }
+  }
+  return ['atk', 'hp', 'def', 'em'].filter((key) => found.has(key)).length
+    ? ['atk', 'hp', 'def', 'em'].filter((key) => found.has(key))
+    : ['atk'];
+}
+
+/** Whether Elemental Mastery itself enters the damage (scaling or reaction). */
+export const emMattersIn = (expr) => !!expr?.hasAmp || scalingBasesOf(expr).includes('em');
+
+/**
+ * The substats that can move THIS expression's damage.
+ *
+ * CRIT Rate and CRIT DMG always can. A scaling source contributes both of its
+ * percentage and flat stats: HP scaling reads HP% + flat HP, DEF scaling reads
+ * DEF% + flat DEF, and so on. EM is included when it scales a hit or feeds an
+ * amplifying reaction. The rest still occupy a line if the user allows them, but
+ * the search does not branch on them.
+ */
+export function feedingSubstatsFor(expr) {
+  const bases = new Set(scalingBasesOf(expr));
+  const out = [];
+  if (bases.has('atk')) out.push('atkPct', 'atk');
+  if (bases.has('hp')) out.push('hpPct', 'hp');
+  if (bases.has('def')) out.push('defPct', 'def');
+  out.push('critRate', 'critDmg');
+  if (emMattersIn(expr)) out.push('em');
+  return out;
+}
 
 /** Every substat a 5-star piece can roll, in the order the panels list them. */
 export const ALL_SUBSTATS = SUB_STATS.slice();
@@ -74,12 +125,17 @@ export const ALL_SUBSTATS = SUB_STATS.slice();
  */
 export const MONO_ORDER = [
   '1', 'U', 'P', 'G', 'C', 'U*C', 'P*C', 'G*C',
-  'A', 'A*U', 'A*P', 'A*G', 'A*C', 'A*U*C', 'A*P*C', 'A*G*C',
+  ...['A', 'H', 'D', 'M'].flatMap((s) => [
+    s, `${s}*U`, `${s}*P`, `${s}*G`, `${s}*C`, `${s}*U*C`, `${s}*P*C`, `${s}*G*C`,
+  ]),
 ];
 
 /** The panel quantity each symbol stands for, as the UI names it. */
 export const SYMBOL_LABEL = {
   A: { chs: '总攻击力', en: 'Total ATK' },
+  H: { chs: '总生命值', en: 'Total HP' },
+  D: { chs: '总防御力', en: 'Total DEF' },
+  M: { chs: '元素精通', en: 'Elemental Mastery' },
   U: { chs: '风伤', en: 'Anemo DMG' },
   P: { chs: '火伤', en: 'Pyro DMG' },
   G: { chs: '增伤', en: 'DMG Bonus' },
@@ -133,7 +189,9 @@ const num = (x) => String(Number(x) || 0);
 
 /** Which panel field a substat feeds. Anything absent spends a roll and does nothing. */
 const FEED_FIELD = {
-  atkPct: 'atkPct', atk: 'flatAtk', critRate: 'critRate', critDmg: 'critDmg', em: 'em',
+  atkPct: 'atkPct', atk: 'flatAtk', hpPct: 'hpPct', hp: 'flatHp',
+  defPct: 'defPct', def: 'flatDef',
+  critRate: 'critRate', critDmg: 'critDmg', em: 'em',
 };
 
 /**
@@ -236,7 +294,7 @@ export function importPieces(build, { upgrades = UPGRADES_DEFAULT } = {}) {
  * @param {object}   o
  * @param {object}   o.expr        From 'mergedExpression'.
  * @param {object}   o.panel       The BASELINE panel (no substats).
- * @param {object}   [o.ref]       '{ A, C, R, E }' of the CURRENT build, emitted last.
+ * @param {object}   [o.ref]       Variables of the CURRENT build, emitted last.
  * @param {object[]} o.pieces      'pieceSpec' results, one per slot.
  * @param {number}   [o.hitScale]
  */
@@ -247,7 +305,12 @@ export function buildProblem({ expr, panel, ref, pieces, hitScale = DEFAULT_HIT_
   rows.push('# artifact-optimize problem: generated, not hand-written');
   put('panel', num(panel.atk), num(panel.atkPct), num(panel.flatAtk),
     num(panel.critRate), num(panel.critDmg),
-    num(panel.anemoDmg), num(panel.pyroDmg), num(panel.dmgBonus), num(panel.em));
+    num(panel.anemoDmg), num(panel.pyroDmg), num(panel.dmgBonus), num(panel.em),
+    // The first nine fields are the historical format. These six are the raw
+    // HP/DEF inputs behind H and D; a reader that predates them can ignore the
+    // tail, exactly as it ignored any later addition.
+    num(panel.hp), num(panel.hpPct), num(panel.flatHp),
+    num(panel.def), num(panel.defPct), num(panel.flatDef));
 
   // Every substat is declared, whether or not any piece may use it, so the CSV's
   // columns are the same shape for every run and read back by NAME.
@@ -280,7 +343,10 @@ export function buildProblem({ expr, panel, ref, pieces, hitScale = DEFAULT_HIT_
   for (const a of expr.coeffs.ampCrit || []) {
     put('amp', 'crit', num(a.emBuff), ...coeffVector(a.coeffs).map(num));
   }
-  if (ref) put('ref', num(ref.A), num(ref.C), num(ref.R), num(ref.E));
+  if (ref) {
+    put('ref', num(ref.A), num(ref.H), num(ref.D), num(ref.M),
+      num(ref.C), num(ref.R), num(ref.E));
+  }
 
   return rows.join('\n') + '\n';
 }
@@ -301,7 +367,7 @@ export function parseResult(text) {
   const aAt = at('A');
   const totalAt = at('total');
   if (aAt < 1) throw new Error('unexpected optimiser header: ' + lines[0]);
-  const panelAt = ['A', 'C', 'R', 'E'].reduce((min, name) => {
+  const panelAt = ['A', 'H', 'D', 'M', 'C', 'R', 'E'].reduce((min, name) => {
     const i = at(name);
     return i >= 0 && (min < 0 || i < min) ? i : min;
   }, -1);
@@ -327,6 +393,9 @@ export function parseResult(text) {
       hasHits,
       total: totalAt >= 0 ? Number(c[totalAt]) || 0 : stats.reduce((s, k) => s + hits[k], 0),
       A: Number(c[aAt]) || 0,
+      H: Number(c[at('H')]) || 0,
+      D: Number(c[at('D')]) || 0,
+      M: Number(c[at('M')]) || 0,
       C: Number(c[at('C')]) || 0,
       R: Number(c[at('R')]) || 0,
       E: Number(c[at('E')]) || 0,

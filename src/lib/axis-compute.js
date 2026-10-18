@@ -22,7 +22,7 @@
 // storage, no cache. Callers memoise it; nothing writes its result back as though
 // it were input.
 
-import { computeDamage } from './damage';
+import { computeDamage, entryScalingBasis } from './damage';
 import { derivePanel } from './stat-derive';
 import { buildSources } from '../char-sources';
 import { defaultStats, reactionByKey } from '../DamageCard';
@@ -129,7 +129,7 @@ export function sourcesForEntry(entry, ctx) {
  */
 function computePart({
   entry, ctx, char, charData, panel, sources, partIndex, element, drops, overrides, critMode,
-  mult: multOverride, hits: hitsOverride,
+  mult: multOverride, hits: hitsOverride, basis,
 }) {
   const sel = entry.summary;
   const src = sources.find((s) => s.key === (sel?.sourceKey || entry.picked?.sourceKey)) || sources[0];
@@ -185,6 +185,7 @@ function computePart({
     zoneMult,
     multZone,
     atkLevel: Number(char?.level) || 90,
+    basis,
   });
 
   return {
@@ -202,6 +203,7 @@ function computePart({
     total: r.total,
     hits: partHits || 1,
     mult: partMult,
+    scalingBasis: r.scalingBasis,
   };
 }
 
@@ -268,6 +270,9 @@ export function computeEntry(entry, ctx) {
       // to 必定暴击 applies to both halves rather than only to the ones that
       // happen to have been touched.
       critMode: c.critMode || entry.critMode || null,
+      // An untouched child inherits the parent's coefficient source. Touching
+      // the child's own dropdown writes `c.scalingBasis`, which wins here.
+      basis: entryScalingBasis(c, entryScalingBasis(entry)),
     })).filter(Boolean);
 
     if (!parts.length) return null;
@@ -288,6 +293,7 @@ export function computeEntry(entry, ctx) {
     critMode: entry.critMode || null,
     mult: entry.scaling?.mult,
     hits: entry.scaling?.hits,
+    basis: entryScalingBasis(entry),
   });
   if (!one) return null;
   return { parts: [one], perHit: one.perHit, total: one.total, hits: one.hits };

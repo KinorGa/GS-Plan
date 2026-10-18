@@ -30,6 +30,7 @@ import { memo, useState } from 'react';
 import { elementOf } from '../game';
 import { ElementGlyph, ElementPicker } from './ElementGlyph';
 import DamageEntry, { tint, SOURCE_KIND_LABEL } from './DamageEntry';
+import { entryScalingBasis } from '../lib/damage';
 
 /**
  * Every note written BELOW a row, so the row can repeat it once it is collapsed.
@@ -801,6 +802,10 @@ function ChildEntry({ child, index, total, parent, team, teamScope, L, setChild,
   const entryLike = {
     ...parent,
     id: child.id,
+    // The child's own choice, else the parent's. A compound row's halves can mix
+    // HP and ATK scaling, but an untouched child follows the row it belongs to
+    // instead of silently falling back to ATK.
+    scalingBasis: entryScalingBasis(child, entryScalingBasis(parent)),
     // The child's own, never the parent's.
     drops: child.drops,
     statOverrides: child.statOverrides,

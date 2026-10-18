@@ -22,7 +22,7 @@ import { elementOf } from '../game';
 import { buildSources, FLAT_SOURCE_PREFIX } from '../char-sources';
 import { useTalentDamage } from '../lib/use-talent-damage'
 import { useFitScale } from '../lib/use-fit-scale';
-import { computeDamage } from '../lib/damage';
+import { computeDamage, entryScalingBasis } from '../lib/damage';
 import { useCatalogue, loadCharacterDetail } from '../lib/catalogue';
 import { derivePanel } from '../lib/stat-derive';
 import { repairOverrides } from '../lib/axes-store';
@@ -471,6 +471,7 @@ function DamageEntry({
       // would restore the exact divergence this recompute exists to prevent: the
       // row on the formula's 90 default while the card used the real level.
       atkLevel: Number(char?.level) || 90,
+      basis: entryScalingBasis(entry),
     });
 
     // `stageIndex` goes back out WITH the report: without it the stored summary
@@ -479,12 +480,13 @@ function DamageEntry({
     return {
       ...sel, sourceKey: src.key, stageIndex, stage, element: usedElement,
       partIndex: pinnedPart,
+      scalingBasis: entryScalingBasis(entry),
       perHit: r.perHit, total: r.total, hits: effective.hits || 1,
     };
     // `char` is a dependency because the defence zone reads its level -- without
     // it the row keeps a number computed at the old level after the panel changes.
     // `zoneMult` too: dropping a card that names its own zone must move the row.
-  }, [entry.summary, entry.charId, entry.picked, panelStats, charData, sources, partIndex, element, char, zoneMult, multZone, entry.scaling]);
+  }, [entry.summary, entry.charId, entry.picked, panelStats, charData, sources, partIndex, element, char, zoneMult, multZone, entry.scaling, entry.scalingBasis]);
 
   const summary = liveSummary;
 
@@ -808,6 +810,10 @@ function DamageEntry({
       // entry has.
       critMode={entry.critMode ?? null}
       onCritModeChange={(k) => onPrefChange?.({ critMode: k })}
+      // The coefficient's source is a display preference too: one entry can be
+      // HP-scaled beside an ATK-scaled one, and collapsing must not reset it.
+      scalingBasis={entryScalingBasis(entry)}
+      onScalingBasisChange={(value) => onPrefChange?.({ scalingBasis: value })}
       reactionKey={entry.reactionKey ?? null}
       onReactionChange={(k) => onPrefChange?.({ reactionKey: k })}
       // WHICH PART OF A COMPOUND ROW, forwarded verbatim. Undefined for an

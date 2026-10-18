@@ -14,16 +14,17 @@
 //
 // INPUT FORMAT (whitespace-separated; '#' starts a comment)
 //   panel   <atk> <atkPct> <flatAtk> <critRate> <critDmg> <anemoDmg> <pyroDmg> <dmgBonus> <em>
+//           [<hp> <hpPct> <flatHp> <def> <defPct> <flatDef>]
 //   hit     <statKey> <valuePerRoll>       # declares a substat; column order follows this order
 //   piece   <slotKey> <lines> <rolls> <maxPerLine>
 //   allow   <slotKey> <statKey> <state>    # state 2 = MUST sit on this piece, 1 = may sit on it
-//   coeff   never <16 numbers>
-//   coeff   crit  <16 numbers>
-//   group   <critRateBuff> <16 numbers>    # avg = never + sum min(R + buff, 100)/100 * group
-//   amp     never <emBuff> <16 numbers>    # polynomial part of an amplifying reaction
-//   amp     crit  <emBuff> <16 numbers>
-//   amp     group <critRateBuff> <emBuff> <16 numbers>
-//   ref     <A> <C> <R> <E>                # optional: the CURRENT build, emitted last
+//   coeff   never <40 numbers>
+//   coeff   crit  <40 numbers>
+//   group   <critRateBuff> <40 numbers>    # avg = never + sum min(R + buff, 100)/100 * group
+//   amp     never <emBuff> <40 numbers>    # polynomial part of an amplifying reaction
+//   amp     crit  <emBuff> <40 numbers>
+//   amp     group <critRateBuff> <emBuff> <40 numbers>
+//   ref     <A> <H> <D> <M> <C> <R> <E>    # optional: the CURRENT build, emitted last
 //
 // THE SHAPE OF A PIECE, WHICH IS THE WHOLE POINT
 //   A 5-star piece at +20 carries EXACTLY four substats and spends exactly nine
@@ -44,19 +45,24 @@
 //   the slot), because this program does not know that a plume is always flat ATK.
 //
 // HOW THE SEARCH IS KEPT SMALL
-//   ATK%, flat ATK, CRIT Rate and CRIT DMG always move the panel; EM moves it too
-//   when an amplifying reaction is present. The rest spend a line and change no
-//   number. A piece's contribution is therefore a small-dimensional roll count,
+//   CRIT Rate and CRIT DMG always move the panel. A scaling block contributes only
+//   when its coefficients are non-zero: ATK% + flat ATK for A, HP% + flat HP for H,
+//   DEF% + flat DEF for D, and EM for M or an amplifying reaction. The rest spend a
+//   line and change no number. A piece's contribution is therefore a small-dimensional roll count,
 //   and pieces are combined level by level with a
 //   dedupe on that count -- a state that has been reached is never expanded twice,
 //   and the count of reachable states is in the tens of thousands rather than the
 //   billions a per-branch walk would visit.
 //
-// MONOMIAL ORDER (fixed, 16 wide)
-//   1 U P G C U*C P*C G*C  A A*U A*P A*G A*C A*U*C A*P*C A*G*C
+// MONOMIAL ORDER (fixed, 40 wide)
+//   1 U P G C U*C P*C G*C
+//   A A*U A*P A*G A*C A*U*C A*P*C A*G*C
+//   H H*U H*P H*G H*C H*U*C H*P*C H*G*C
+//   D D*U D*P D*G D*C D*U*C D*P*C D*G*C
+//   M M*U M*P M*G M*C M*U*C M*P*C M*G*C
 //
 // OUTPUT
-//   CSV on stdout: one row per DISTINCT (A, C, R, E) outcome, sorted by expected
+//   CSV on stdout: one row per DISTINCT (A, H, D, M, C, R, E) outcome, sorted by expected
 //   damage, with the three crit conventions and the ROLL COUNT per substat that
 //   reaches it.
 
@@ -77,24 +83,28 @@
 
 namespace {
 
-constexpr int MONO = 16;
+constexpr int MONO = 40;
 // Substats one problem may declare. Ten exist in the game; the slack is room.
 constexpr int MAX_STATS = 16;
 // Bits one feeding dimension takes in a packed roll count.
-constexpr int FEED_BITS = 12;
+constexpr int FEED_BITS = 6;
 
 /*
  * Which panel quantity a substat moves, or -1 for one that moves nothing.
  *
  * The ORDER is the packing order of the packed key, so it is part of the format
- * rather than a private detail: five dimensions need FEED_BITS * 5 <= 64.
+ * rather than a private detail: nine dimensions need FEED_BITS * 9 <= 64.
  */
 int feedDimOf(const std::string& key) {
   if (key == "atkPct") return 0;
   if (key == "atk") return 1;
-  if (key == "critRate") return 2;
-  if (key == "critDmg") return 3;
-  if (key == "em") return 4;
+  if (key == "hpPct") return 2;
+  if (key == "hp") return 3;
+  if (key == "defPct") return 4;
+  if (key == "def") return 5;
+  if (key == "critRate") return 6;
+  if (key == "critDmg") return 7;
+  if (key == "em") return 8;
   return -1;
 }
 
@@ -102,6 +112,8 @@ struct Problem {
   double atk = 0, atkPct = 0, flatAtk = 0, critRate = 0, critDmg = 0;
   double anemoDmg = 0, pyroDmg = 0, dmgBonus = 0;
   double em = 0;
+  double hp = 0, hpPct = 0, flatHp = 0;
+  double def = 0, defPct = 0, flatDef = 0;
 
   std::vector<std::string> keys;          // declared substats, in column order
   std::array<int, MAX_STATS> feed{};      // -1, or the dimension the stat feeds
@@ -132,7 +144,7 @@ struct Problem {
   std::vector<Group> groups;
 
   bool hasRef = false;
-  double refA = 0, refC = 0, refR = 0, refE = 0;
+  double refA = 0, refH = 0, refD = 0, refM = 0, refC = 0, refR = 0, refE = 0;
 
   int indexOf(const std::string& key) const {
     for (size_t i = 0; i < keys.size(); ++i) if (keys[i] == key) return (int)i;
@@ -147,13 +159,20 @@ struct Problem {
 
 // The fixed monomial order, expanded.
 inline double evalCoeffs(const std::array<double, MONO>& c,
-                         double A, double U, double P, double G, double C) {
-  return c[0]
-       + c[1] * U + c[2] * P + c[3] * G + c[4] * C
-       + c[5] * U * C + c[6] * P * C + c[7] * G * C
-       + A * (c[8]
-              + c[9] * U + c[10] * P + c[11] * G + c[12] * C
-              + c[13] * U * C + c[14] * P * C + c[15] * G * C);
+                         double A, double H, double D, double M,
+                         double U, double P, double G, double C) {
+  double sum = c[0]
+             + c[1] * U + c[2] * P + c[3] * G + c[4] * C
+             + c[5] * U * C + c[6] * P * C + c[7] * G * C;
+  const double scaling[4] = {A, H, D, M};
+  for (int i = 0; i < 4; ++i) {
+    const int at = 8 + i * 8;
+    sum += scaling[i] * (c[at]
+                        + c[at + 1] * U + c[at + 2] * P + c[at + 3] * G
+                        + c[at + 4] * C + c[at + 5] * U * C
+                        + c[at + 6] * P * C + c[at + 7] * G * C);
+  }
+  return sum;
 }
 
 inline double emFactor(double em) {
@@ -161,10 +180,11 @@ inline double emFactor(double em) {
 }
 
 inline double evalAmp(const std::vector<Problem::Amp>& groups,
-                      double E, double A, double U, double P, double G, double C) {
+                      double E, double A, double H, double D, double M,
+                      double U, double P, double G, double C) {
   double sum = 0;
   for (const auto& g : groups) {
-    sum += emFactor(E + g.emBuff) * evalCoeffs(g.coeffs, A, U, P, G, C);
+    sum += emFactor(E + g.emBuff) * evalCoeffs(g.coeffs, A, H, D, M, U, P, G, C);
   }
   return sum;
 }
@@ -178,6 +198,23 @@ bool hasAmp(const Problem& p) {
   };
   if (any(p.ampNever) || any(p.ampCrit)) return true;
   for (const auto& g : p.groups) if (any(g.amp)) return true;
+  return false;
+}
+
+// Whether any coefficient uses one of the four scaling blocks. A substat that
+// feeds an unused block is a junk line: letting it branch would multiply the
+// search for a number the polynomial cannot see.
+bool hasScalingBlock(const Problem& p, int block) {
+  const int from = 8 + block * 8;
+  const auto any = [from](const std::array<double, MONO>& c) {
+    for (int i = from; i < from + 8; ++i) if (c[i] != 0) return true;
+    return false;
+  };
+  if (any(p.never) || any(p.crit)) return true;
+  for (const auto& g : p.groups) if (any(g.delta)) return true;
+  for (const auto& a : p.ampNever) if (any(a.coeffs)) return true;
+  for (const auto& a : p.ampCrit) if (any(a.coeffs)) return true;
+  for (const auto& g : p.groups) for (const auto& a : g.amp) if (any(a.coeffs)) return true;
   return false;
 }
 
@@ -215,6 +252,13 @@ bool readProblem(const char* path, Problem& p, std::string& err) {
       // EM was appended to the format; an older eight-number problem is still
       // readable and simply has no reaction EM.
       if (!(is >> p.em)) p.em = 0;
+      // The HP/DEF tail was appended later. An older nine-field panel is still
+      // valid; missing fields simply leave H and D at zero.
+      double hp = 0, hpPct = 0, flatHp = 0, def = 0, defPct = 0, flatDef = 0;
+      if (take(is, hp, hpPct, flatHp, def, defPct, flatDef)) {
+        p.hp = hp; p.hpPct = hpPct; p.flatHp = flatHp;
+        p.def = def; p.defPct = defPct; p.flatDef = flatDef;
+      }
     } else if (kind == "hit") {
       std::string key; double v = 0;
       if (!take(is, key, v)) { err = "hit: expected a key and a value"; return false; }
@@ -247,11 +291,11 @@ bool readProblem(const char* path, Problem& p, std::string& err) {
       std::array<double, MONO>* dst =
           which == "never" ? &p.never : which == "crit" ? &p.crit : nullptr;
       if (!dst) { err = "coeff must be never|crit"; return false; }
-      if (!readVector(is, *dst)) { err = "coeff: expected 16 numbers"; return false; }
+      if (!readVector(is, *dst)) { err = "coeff: expected 40 numbers"; return false; }
     } else if (kind == "group") {
       Problem::Group g{};
       if (!take(is, g.crBuff)) { err = "group: expected a crit-rate buff"; return false; }
-      if (!readVector(is, g.delta)) { err = "group: expected 16 numbers"; return false; }
+      if (!readVector(is, g.delta)) { err = "group: expected 40 numbers"; return false; }
       if (Problem::Group* existing = groupOf(g.crBuff)) existing->delta = g.delta;
       else p.groups.push_back(g);
     } else if (kind == "amp") {
@@ -260,7 +304,7 @@ bool readProblem(const char* path, Problem& p, std::string& err) {
       Problem::Amp a{};
       if (which == "never" || which == "crit") {
         if (!take(is, a.emBuff)) { err = "amp: expected an EM buff"; return false; }
-        if (!readVector(is, a.coeffs)) { err = "amp: expected 16 numbers"; return false; }
+        if (!readVector(is, a.coeffs)) { err = "amp: expected 40 numbers"; return false; }
         (which == "never" ? p.ampNever : p.ampCrit).push_back(a);
       } else if (which == "group") {
         double crBuff = 0;
@@ -268,7 +312,7 @@ bool readProblem(const char* path, Problem& p, std::string& err) {
           err = "amp group: expected crit-rate and EM buffs";
           return false;
         }
-        if (!readVector(is, a.coeffs)) { err = "amp group: expected 16 numbers"; return false; }
+        if (!readVector(is, a.coeffs)) { err = "amp group: expected 40 numbers"; return false; }
         Problem::Group* g = groupOf(crBuff);
         if (!g) {
           Problem::Group made{};
@@ -283,8 +327,8 @@ bool readProblem(const char* path, Problem& p, std::string& err) {
       }
     } else if (kind == "ref") {
       p.hasRef = true;
-      if (!take(is, p.refA, p.refC, p.refR)) {
-        err = "ref: expected A, C and R";
+      if (!take(is, p.refA, p.refH, p.refD, p.refM, p.refC, p.refR)) {
+        err = "ref: expected A, H, D, M, C and R";
         return false;
       }
       if (!(is >> p.refE)) p.refE = 0;
@@ -416,7 +460,7 @@ std::vector<Cand> candidatesOf(const Problem& p, const Problem::Piece& pc) {
 }
 
 struct Row {
-  double A = 0, C = 0, R = 0, E = 0;
+  double A = 0, H = 0, D = 0, M = 0, C = 0, R = 0, E = 0;
   double never = 0, crit = 0, avg = 0;
   Rolls rolls{};
   int total = 0;
@@ -426,9 +470,10 @@ struct Row {
 // one. It is a tuple rather than an arithmetic hash: two different outcomes can
 // collide under `a * 1000003 + b * 1009 + c`, and a collision here DROPS a row.
 struct OutcomeKey {
-  long long a = 0, c = 0, r = 0, e = 0;
+  long long a = 0, h = 0, d = 0, m = 0, c = 0, r = 0, e = 0;
   bool operator==(const OutcomeKey& o) const {
-    return a == o.a && c == o.c && r == o.r && e == o.e;
+    return a == o.a && h == o.h && d == o.d && m == o.m
+        && c == o.c && r == o.r && e == o.e;
   }
 };
 
@@ -438,14 +483,15 @@ struct OutcomeKeyHash {
     const auto mix = [&h](long long x) {
       h ^= std::hash<long long>{}(x) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
     };
-    mix(k.a); mix(k.c); mix(k.r); mix(k.e);
+    mix(k.a); mix(k.h); mix(k.d); mix(k.m); mix(k.c); mix(k.r); mix(k.e);
     return h;
   }
 };
 
-inline OutcomeKey keyOf(double A, double C, double R, double E, bool includeE) {
+inline OutcomeKey keyOf(double A, double H, double D, double M,
+                        double C, double R, double E, bool includeE) {
   const auto q = [](double x) { return (long long)std::llround(x * 1e4); };
-  return { q(A), q(C), q(R), includeE ? q(E) : 0 };
+  return { q(A), q(H), q(D), q(M), q(C), q(R), includeE ? q(E) : 0 };
 }
 
 }  // namespace
@@ -473,10 +519,20 @@ int main(int argc, char** argv) {
 
   const int n = (int)p.keys.size();
   const bool amp = hasAmp(p);
-  // EM is a junk line unless an amplifying reaction makes it matter. Treating it
-  // as a search dimension anyway would multiply every level for no benefit.
-  if (!amp) {
-    for (int i = 0; i < n; ++i) if (p.keys[i] == "em") p.feed[i] = -1;
+  const bool useA = hasScalingBlock(p, 0);
+  const bool useH = hasScalingBlock(p, 1);
+  const bool useD = hasScalingBlock(p, 2);
+  const bool useM = hasScalingBlock(p, 3);
+  // A substat is a search dimension only when the polynomial can see it. HP% is
+  // junk on an ATK-only character just as ATK% is on an HP-scaled one, and EM is
+  // junk unless it scales a hit or feeds an amplifying reaction. Treating them as
+  // dimensions anyway multiplies every level for no benefit.
+  for (int i = 0; i < n; ++i) {
+    const std::string& key = p.keys[i];
+    if ((key == "atkPct" || key == "atk") && !useA) p.feed[i] = -1;
+    if ((key == "hpPct" || key == "hp") && !useH) p.feed[i] = -1;
+    if ((key == "defPct" || key == "def") && !useD) p.feed[i] = -1;
+    if (key == "em" && !amp && !useM) p.feed[i] = -1;
   }
 
   // THE COMBINE: one level per piece, deduped on the FEEDING ROLL COUNTS.
@@ -509,7 +565,10 @@ int main(int argc, char** argv) {
   std::unordered_set<OutcomeKey, OutcomeKeyHash> seen;
   rows.reserve(level.size());
   for (const auto& entry : level) {
-    double atkPct = p.atkPct, flatAtk = p.flatAtk, critRate = p.critRate, critDmg = p.critDmg;
+    double atkPct = p.atkPct, flatAtk = p.flatAtk;
+    double hpPct = p.hpPct, flatHp = p.flatHp;
+    double defPct = p.defPct, flatDef = p.flatDef;
+    double critRate = p.critRate, critDmg = p.critDmg;
     double em = p.em;
     for (int i = 0; i < n; ++i) {
       const int r = entry.second[i];
@@ -518,32 +577,40 @@ int main(int argc, char** argv) {
       switch (p.feed[i]) {
         case 0: atkPct += add; break;
         case 1: flatAtk += add; break;
-        case 2: critRate += add; break;
-        case 3: critDmg += add; break;
-        case 4: em += add; break;
+        case 2: hpPct += add; break;
+        case 3: flatHp += add; break;
+        case 4: defPct += add; break;
+        case 5: flatDef += add; break;
+        case 6: critRate += add; break;
+        case 7: critDmg += add; break;
+        case 8: em += add; break;
         default: break;
       }
     }
     const double A = p.atk * (1 + atkPct / 100.0) + flatAtk;
+    const double H = p.hp * (1 + hpPct / 100.0) + flatHp;
+    const double D = p.def * (1 + defPct / 100.0) + flatDef;
+    const double M = em;
     const double C = critDmg;
     const double R = critRate;
     const double E = em;
-    if (!seen.insert(keyOf(A, C, R, E, amp)).second) continue;
+    if (!seen.insert(keyOf(A, H, D, M, C, R, E, amp || useM)).second) continue;
 
     Row row;
-    row.A = A; row.C = C; row.R = R; row.E = E;
+    row.A = A; row.H = H; row.D = D; row.M = M;
+    row.C = C; row.R = R; row.E = E;
     row.rolls = entry.second;
     row.total = 0;
     for (int i = 0; i < n; ++i) row.total += entry.second[i];
-    row.never = evalCoeffs(p.never, A, p.anemoDmg, p.pyroDmg, p.dmgBonus, C)
-              + evalAmp(p.ampNever, E, A, p.anemoDmg, p.pyroDmg, p.dmgBonus, C);
-    row.crit = evalCoeffs(p.crit, A, p.anemoDmg, p.pyroDmg, p.dmgBonus, C)
-             + evalAmp(p.ampCrit, E, A, p.anemoDmg, p.pyroDmg, p.dmgBonus, C);
+    row.never = evalCoeffs(p.never, A, H, D, M, p.anemoDmg, p.pyroDmg, p.dmgBonus, C)
+              + evalAmp(p.ampNever, E, A, H, D, M, p.anemoDmg, p.pyroDmg, p.dmgBonus, C);
+    row.crit = evalCoeffs(p.crit, A, H, D, M, p.anemoDmg, p.pyroDmg, p.dmgBonus, C)
+             + evalAmp(p.ampCrit, E, A, H, D, M, p.anemoDmg, p.pyroDmg, p.dmgBonus, C);
     row.avg = row.never;
     for (const auto& g : p.groups) {
       const double mu = std::min(R + g.crBuff, 100.0) / 100.0;
-      row.avg += mu * (evalCoeffs(g.delta, A, p.anemoDmg, p.pyroDmg, p.dmgBonus, C)
-                     + evalAmp(g.amp, E, A, p.anemoDmg, p.pyroDmg, p.dmgBonus, C));
+      row.avg += mu * (evalCoeffs(g.delta, A, H, D, M, p.anemoDmg, p.pyroDmg, p.dmgBonus, C)
+                     + evalAmp(g.amp, E, A, H, D, M, p.anemoDmg, p.pyroDmg, p.dmgBonus, C));
     }
     rows.push_back(std::move(row));
   }
@@ -552,26 +619,34 @@ int main(int argc, char** argv) {
             [](const Row& a, const Row& b) { return a.avg > b.avg; });
 
   for (int i = 0; i < n; ++i) std::printf("%s,", p.keys[i].c_str());
-  std::printf("total,A,C,R,E,dmg_never,dmg_crit,dmg_avg,is_current\n");
+  std::printf("total,A,H,D,M,C,R,E,dmg_never,dmg_crit,dmg_avg,is_current\n");
   for (const auto& r : rows) {
     for (int i = 0; i < n; ++i) std::printf("%d,", r.rolls[i]);
-    std::printf("%d,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,0\n",
-                r.total, r.A, r.C, r.R, r.E, r.never, r.crit, r.avg);
+    std::printf("%d,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,0\n",
+                r.total, r.A, r.H, r.D, r.M, r.C, r.R, r.E,
+                r.never, r.crit, r.avg);
   }
   if (p.hasRef) {
     for (int i = 0; i < n; ++i) std::printf(",");
-    const double never = evalCoeffs(p.never, p.refA, p.anemoDmg, p.pyroDmg, p.dmgBonus, p.refC)
-                       + evalAmp(p.ampNever, p.refE, p.refA, p.anemoDmg, p.pyroDmg, p.dmgBonus, p.refC);
-    const double crit = evalCoeffs(p.crit, p.refA, p.anemoDmg, p.pyroDmg, p.dmgBonus, p.refC)
-                      + evalAmp(p.ampCrit, p.refE, p.refA, p.anemoDmg, p.pyroDmg, p.dmgBonus, p.refC);
+    const double never = evalCoeffs(p.never, p.refA, p.refH, p.refD, p.refM,
+                                    p.anemoDmg, p.pyroDmg, p.dmgBonus, p.refC)
+                       + evalAmp(p.ampNever, p.refE, p.refA, p.refH, p.refD, p.refM,
+                                 p.anemoDmg, p.pyroDmg, p.dmgBonus, p.refC);
+    const double crit = evalCoeffs(p.crit, p.refA, p.refH, p.refD, p.refM,
+                                   p.anemoDmg, p.pyroDmg, p.dmgBonus, p.refC)
+                      + evalAmp(p.ampCrit, p.refE, p.refA, p.refH, p.refD, p.refM,
+                                p.anemoDmg, p.pyroDmg, p.dmgBonus, p.refC);
     double avg = never;
     for (const auto& g : p.groups) {
       const double mu = std::min(p.refR + g.crBuff, 100.0) / 100.0;
-      avg += mu * (evalCoeffs(g.delta, p.refA, p.anemoDmg, p.pyroDmg, p.dmgBonus, p.refC)
-                 + evalAmp(g.amp, p.refE, p.refA, p.anemoDmg, p.pyroDmg, p.dmgBonus, p.refC));
+      avg += mu * (evalCoeffs(g.delta, p.refA, p.refH, p.refD, p.refM,
+                              p.anemoDmg, p.pyroDmg, p.dmgBonus, p.refC)
+                 + evalAmp(g.amp, p.refE, p.refA, p.refH, p.refD, p.refM,
+                           p.anemoDmg, p.pyroDmg, p.dmgBonus, p.refC));
     }
-    std::printf(",%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,1\n",
-                p.refA, p.refC, p.refR, p.refE, never, crit, avg);
+    std::printf(",%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,1\n",
+                p.refA, p.refH, p.refD, p.refM, p.refC, p.refR, p.refE,
+                never, crit, avg);
   }
   std::fprintf(stderr, "distinct outcomes: %zu\n", rows.size());
   return 0;

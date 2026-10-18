@@ -19,6 +19,7 @@
 
 import { DAMAGE_TYPES, KEY_SUFFIX } from './elements';
 import { packAxes, unpackAxes } from './axes-pool';
+import { normaliseScalingBasis } from './damage';
 
 const STORAGE_KEY = 'lunaris-axes';
 
@@ -188,6 +189,13 @@ function repairEntries(list, depth = 0) {
       ...e,
       id,
       charId: e.charId || 'none',
+      // Omitted stays omitted: a child with no value of its own inherits the
+      // parent at compute time, and defaulting it to `atk` here would freeze that
+      // inheritance on the first load. A stored value, including the Chinese
+      // spelling an imported file may carry, is normalised once.
+      ...(e.scalingBasis != null
+        ? { scalingBasis: normaliseScalingBasis(e.scalingBasis) }
+        : {}),
       // A drop without a `source` cannot be rendered, so it is dropped here
       // rather than crashing the card.
       drops: (Array.isArray(e.drops) ? e.drops : []).filter((d) => d && d.source),
@@ -243,6 +251,9 @@ function repairChildren(list) {
       ...c,
       id: String(c.id || `p${partIndex}`),
       partIndex,
+      ...(c.scalingBasis != null
+        ? { scalingBasis: normaliseScalingBasis(c.scalingBasis) }
+        : {}),
       // Null is a REAL state here: it means "the user has not said what element
       // this half is", and the child says so on screen. It must not be coerced to
       // the skill's element, which would state something the data does not.
