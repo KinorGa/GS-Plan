@@ -1763,7 +1763,13 @@ function Page() {
                 {/* THE AXIS FOOTER. Below the rows, because it summarises them --
                     reading "80% is one character" only means something once you
                     have seen the rows it is describing. */}
-                <AxisSummary entries={entries} axis={axis} team={team} L={L} />
+                <AxisSummary
+                  entries={entries}
+                  axis={axis}
+                  team={withDetail}
+                  talentDamage={talentDamageTable}
+                  L={L}
+                />
               </div>
             )}
           </div>

@@ -17,9 +17,12 @@
 // one element would attribute the whole hit to a damage type half of it never had.
 // That is also why the element share is not derived from the character's element.
 
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { avatarImg, elementOf, talentIconImg } from '../game';
 import { ElementGlyph, damageTypeLabel } from './ElementGlyph';
+import { groupDamageSegments } from '../lib/damage-histogram';
+import { buildSources } from '../char-sources';
 
 /**
  * @param {Array}  entries  The axis's entries -- read only for their NAMES and
@@ -28,16 +31,47 @@ import { ElementGlyph, damageTypeLabel } from './ElementGlyph';
  *                          comes from: it is derived from the data on demand, so it
  *                          cannot be stale and cannot depend on which cards happen
  *                          to have mounted.
- * @param {object} team     Team units, for a character's display name and portrait.
+ * @param {object} team     Team units, for a character's display name and portrait,
+ *                          and -- when their detail is loaded -- the FULL damage
+ *                          source table used by the segment selector.
+ * @param {object} talentDamage  The curated constellation/passive damage table.
  * @param {Function} L      i18n picker.
  */
-export default function AxisSummary({ entries, axis, team, L }) {
+export default function AxisSummary({ entries, axis, team, talentDamage, L }) {
   // Which slice is being pointed at, so the chart and the legend can highlight
   // together. NAMESPACED BY CHART: a bare key collided across the two, so hovering
   // an Anemo legend row dimmed every slice of the CHARACTER chart too (the key
   // matched nothing there) and emptied its centre. `char:10000128` cannot collide
   // with `el:Anemo`.
   const [hover, setHover] = useState(null);
+  // Which stage/segment each character's histogram is showing. Kept here rather
+  // than inside the chart so switching sources never remounts the character block.
+  const [segmentPick, setSegmentPick] = useState({});
+
+  /**
+   * The character's COMPLETE source vocabulary, independent of the axis.
+   *
+   * Building this from the rows on the axis made the selector change shape when a
+   * row was deleted: a stage that still exists in the character's talent table
+   * disappeared from the menu merely because this particular rotation did not use
+   * it. `buildSources` is the same function the row editor uses, so the choices are
+   * every active talent, curated constellation/passive and flat-damage type -- not
+   * a snapshot of one configuration file.
+   */
+  const sourceCatalogByChar = useMemo(() => {
+    const out = new Map();
+    for (const unit of team || []) {
+      if (!unit?.id || !unit.detail) continue;
+      out.set(unit.id, buildSources(
+        unit.detail,
+        unit.element,
+        talentDamage,
+        unit.id,
+        unit.talents,
+      ));
+    }
+    return out;
+  }, [team, talentDamage]);
 
   /**
    * One row per PART, taken from the COMPUTED axis.
@@ -71,6 +105,14 @@ export default function AxisSummary({ entries, axis, team, L }) {
   const walk = (e, r) => {
     const s = e.summary || {};
     const srcLabel = s.sourceLabel || null;
+    // A compound row has no `summary.stage`, but it does keep the picked stage
+    // index and the source's own stage table. Reading the label from there keeps
+    // "狂飙突进·二段伤害" readable instead of calling it "stage 3".
+    const stageIndex = s.stageIndex ?? e.picked?.stageIndex ?? null;
+    const stageLabel = s.stage
+      || (stageIndex == null ? null : srcLabel?.stages?.[stageIndex])
+      || null;
+    const stageName = stageLabel?.chs || stageLabel?.en || null;
     const source = {
       key: s.sourceKey || 'unknown',
       kind: srcLabel?.kind || null,
@@ -81,6 +123,9 @@ export default function AxisSummary({ entries, axis, team, L }) {
       // type's glyph, which the legend draws itself. `iconKind` is what says so.
       iconKind: srcLabel?.iconKind || null,
       element: srcLabel?.element || null,
+      // The SOURCE'S OWN stage table. The histogram selector is built from this,
+      // not from the stages that happen to have rows in the current axis.
+      stages: srcLabel?.stages || null,
     };
 
     if (e.kind === 'segment') {
@@ -91,7 +136,9 @@ export default function AxisSummary({ entries, axis, team, L }) {
       return;
     }
 
-    for (const p of r.parts || []) {
+    const partList = r.parts || [];
+    for (let i = 0; i < partList.length; i += 1) {
+      const p = partList[i];
       // `total` already includes `hits` -- `computeDamage` returns it that way --
       // so a part that hits twice contributes twice. Reading `perHit` here was the
       // other half of the old bug: 苍噬's two `x2` parts were counted once each.
@@ -101,6 +148,16 @@ export default function AxisSummary({ entries, axis, team, L }) {
         element: p.element || null,
         amount: p.total,
         source,
+        sourceKey: source.key,
+        stageIndex,
+        stageName,
+        entryId: e.id,
+        // The order the axis shows it. This is what makes "第几次释放" mean
+        // rotation order rather than object-array order.
+        order: parts.length,
+        partIndex: Number.isInteger(p.partIndex) ? p.partIndex : i,
+        partCount: partList.length,
+        hits: p.hits || 1,
       });
     }
   };
@@ -222,6 +279,57 @@ export default function AxisSummary({ entries, axis, team, L }) {
     .map((charId) => {
       const mine = parts.filter((p) => p.charId === charId);
       const mineTotal = mine.reduce((n, p) => n + p.amount, 0);
+      // Every stage of every source the CHARACTER has, not every source this axis
+      // happens to use. A stage with no row in the current axis stays selectable
+      // and reads "no record" instead of disappearing, so the selector is not a
+      // mirror of one configuration file.
+      const stageCatalog = [];
+      const seenStages = new Set();
+      const addSourceStages = (source) => {
+        if (!source) return;
+        // Raw `buildSources` rows use `chs`/`en`, while a part's normalized source
+        // uses `name`/`nameEn`. Normalize both here so the menu never falls back to
+        // an internal key such as `ELEMENTALSKILL` or `FLATDMG-PYRO`.
+        const catalogSource = {
+          ...source,
+          name: source.name || source.chs || source.nameEn || source.en || null,
+          nameEn: source.nameEn || source.en || null,
+        };
+        for (let i = 0; i < (source.stages?.length || 0); i += 1) {
+          const key = `${source.key || 'unknown'}|index:${i}`;
+          if (seenStages.has(key)) continue;
+          seenStages.add(key);
+          const stage = source.stages[i];
+          stageCatalog.push({
+            sourceKey: source.key,
+            source: catalogSource,
+            stageIndex: i,
+            stageName: stage?.chs || stage?.en || null,
+          });
+        }
+      };
+      for (const source of sourceCatalogByChar.get(charId) || []) addSourceStages(source);
+      // Keep a fallback for an imported/legacy source that the current character
+      // data cannot rebuild. It is appended after the complete catalogue rather
+      // than defining it.
+      for (const p of mine) {
+        addSourceStages(p.source);
+      }
+      const segmentGroups = groupDamageSegments(mine, stageCatalog);
+      const picked = segmentPick[charId] || {};
+      const selectedGroup = segmentGroups.find((g) => g.key === picked.groupKey)
+        // With the complete catalogue first, the first option is usually a normal
+        // attack this rotation does not use. Default to the first stage that HAS
+        // a cast so opening the summary still explains the axis; the option order
+        // itself remains independent of the configuration.
+        || segmentGroups.find((g) => g.occurrences.length > 0)
+        || segmentGroups[0]
+        || null;
+      const pickedPart = picked.partIndex ?? 'all';
+      const selectedPart = pickedPart !== 'all'
+        && selectedGroup?.parts.some((p) => p.partIndex === pickedPart)
+        ? pickedPart
+        : 'all';
       const elMap = new Map();
       const srcMap = new Map();
       for (const p of mine) {
@@ -262,6 +370,9 @@ export default function AxisSummary({ entries, axis, team, L }) {
           null,
           mineTotal,
         ),
+        segmentGroups,
+        selectedGroup,
+        selectedPart,
       };
     });
 
@@ -424,12 +535,462 @@ export default function AxisSummary({ entries, axis, team, L }) {
                 compact
               />
             </div>
+
+            {/* One histogram per character, keyed by the SELECTED stage. A
+                compound row's parts stack in one bar; the part selector isolates
+                "四风将起 第 1 段" when that is the question. */}
+            {b.selectedGroup && (
+              <div className="basis-full border-t border-white/[0.06] pt-2" data-segment-section={b.charId}>
+                <SegmentHistogram
+                  groups={b.segmentGroups}
+                  group={b.selectedGroup}
+                  partIndex={b.selectedPart}
+                  onGroup={(key) => setSegmentPick((prev) => ({
+                    ...prev,
+                    [b.charId]: { groupKey: key, partIndex: 'all' },
+                  }))}
+                  onPart={(value) => setSegmentPick((prev) => ({
+                    ...prev,
+                    [b.charId]: {
+                      groupKey: b.selectedGroup.key,
+                      partIndex: value === 'all' ? 'all' : Number(value),
+                    },
+                  }))}
+                  L={L}
+                />
+              </div>
+            )}
           </div>
         ))}
       </div>
     </div>
   );
 }
+
+/**
+ * One talent stage's casts, as bars.
+ *
+ * X IS THE CAST NUMBER, not the part number: a stage cast three times has three
+ * bars, and a two-part stage stacks its parts inside each bar. The part selector
+ * narrows the stack to one segment, which is what makes "四风将起 第 1 段"
+ * directly readable without inventing a second chart.
+ */
+function SegmentHistogram({ groups, group, partIndex, onGroup, onPart, L }) {
+  const [hovered, setHovered] = useState(null);
+  const [segmentOpen, setSegmentOpen] = useState(false);
+  const [partOpen, setPartOpen] = useState(false);
+  const segmentAnchor = useRef(null);
+  const partAnchor = useRef(null);
+  if (!group) return null;
+
+  const rows = group.occurrences
+    .map((occurrence) => {
+      const shown = partIndex === 'all'
+        ? occurrence.parts
+        : occurrence.parts.filter((part) => part.partIndex === partIndex);
+      return {
+        ...occurrence,
+        shown,
+        shownTotal: shown.reduce((sum, part) => sum + part.amount, 0),
+      };
+    })
+    .filter((row) => row.shownTotal > 0);
+  const max = Math.max(...rows.map((row) => row.shownTotal), 1);
+  const every = Math.max(1, Math.ceil(rows.length / 10));
+  const partLabel = (part) => {
+    const element = part.element ? damageTypeLabel(part.element) : null;
+    const suffix = element ? ` · ${L(element)}` : '';
+    return L({
+      chs: `第 ${part.partIndex + 1} 段${suffix}`,
+      en: `Segment ${part.partIndex + 1}${suffix}`,
+    });
+  };
+  const selectedPart = partIndex === 'all'
+    ? null
+    : group.parts.find((part) => part.partIndex === partIndex) || null;
+  const partValueLabel = selectedPart
+    ? partLabel(selectedPart)
+    : L({ chs: '全部段', en: 'All segments' });
+
+  return (
+    <div data-segment-histogram={group.key} className="flex min-w-0 flex-col gap-1.5">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="text-[10px] uppercase tracking-wider text-white/25">
+          {L({ chs: '伤害段', en: 'Damage segment' })}
+        </span>
+        <button
+          ref={segmentAnchor}
+          type="button"
+          data-segment-select
+          aria-haspopup="listbox"
+          aria-expanded={segmentOpen}
+          title={segmentLabel(group)}
+          onClick={() => {
+            setSegmentOpen((open) => !open);
+            setPartOpen(false);
+          }}
+          className={`flex max-w-[300px] min-w-0 items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] outline-none transition-colors ${
+            segmentOpen
+              ? 'border-white/25 bg-white/[0.075] text-white/90'
+              : 'border-white/10 bg-white/[0.04] text-white/75 hover:border-white/20 hover:bg-white/[0.06]'
+          }`}
+        >
+          {sourceGlyph(group.source, 13)}
+          <span className="min-w-0 truncate">{primaryNameOf(group)}</span>
+          <span className="shrink-0 text-[8px] text-white/30">▾</span>
+        </button>
+        {segmentOpen && (
+          <SegmentMenu
+            anchor={segmentAnchor.current}
+            groups={groups}
+            value={group.key}
+            onPick={(key) => {
+              onGroup(key);
+              setSegmentOpen(false);
+              setPartOpen(false);
+            }}
+            onClose={() => setSegmentOpen(false)}
+          />
+        )}
+        {group.parts.length > 1 && (
+          <>
+            <button
+              ref={partAnchor}
+              type="button"
+              data-segment-part
+              aria-haspopup="listbox"
+              aria-expanded={partOpen}
+              onClick={() => {
+                setPartOpen((open) => !open);
+                setSegmentOpen(false);
+              }}
+              className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] outline-none transition-colors ${
+                partOpen
+                  ? 'border-white/25 bg-white/[0.075] text-white/90'
+                  : 'border-white/10 bg-white/[0.04] text-white/75 hover:border-white/20 hover:bg-white/[0.06]'
+              }`}
+            >
+              <span>{partValueLabel}</span>
+              <span className="text-[8px] text-white/30">▾</span>
+            </button>
+            {partOpen && (
+              <PartMenu
+                anchor={partAnchor.current}
+                parts={group.parts}
+                value={partIndex === 'all' ? 'all' : String(partIndex)}
+                partLabel={partLabel}
+                allLabel={L({ chs: '全部段', en: 'All segments' })}
+                onPick={(value) => {
+                  onPart(value);
+                  setPartOpen(false);
+                }}
+                onClose={() => setPartOpen(false)}
+              />
+            )}
+          </>
+        )}
+        <span className="ml-auto text-[10px] tabular-nums text-white/30">
+          {L({ chs: '峰值', en: 'Peak' })} {Math.round(max).toLocaleString('en-US')}
+        </span>
+      </div>
+
+      <div className="relative flex h-[86px] items-end gap-[2px] rounded-lg border border-white/[0.05] bg-black/20 px-2 pt-2">
+        {!rows.length && (
+          <span className="flex h-full w-full items-center justify-center text-[10px] text-white/25">
+            {L({ chs: '本轴没有该段的伤害记录', en: 'No casts of this segment in this axis' })}
+          </span>
+        )}
+        {rows.map((row, i) => {
+          const height = Math.max(2, (row.shownTotal / max) * 100);
+          return (
+            <button
+              key={row.entryId}
+              type="button"
+              data-segment-bar={i + 1}
+              data-segment-total={Math.round(row.shownTotal)}
+              onMouseEnter={() => setHovered(i)}
+              onMouseLeave={() => setHovered(null)}
+              className="group relative flex h-full min-w-0 flex-1 items-end justify-center border-0 bg-transparent p-0"
+            >
+              <span
+                className="flex w-full max-w-[26px] flex-col-reverse overflow-hidden rounded-t-[3px] transition-[filter,opacity] duration-150"
+                style={{ height: `${height}%`, opacity: hovered == null || hovered === i ? 1 : 0.45 }}
+              >
+                {row.shown.map((part) => (
+                  <span
+                    key={part.partIndex}
+                    className="block w-full"
+                    style={{
+                      flexGrow: part.amount,
+                      backgroundColor: PART_RAMP[part.partIndex % PART_RAMP.length],
+                    }}
+                  />
+                ))}
+              </span>
+              {hovered === i && (
+                <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1 w-max -translate-x-1/2 rounded-md border border-white/15 bg-[#111] px-2 py-1 text-[10px] leading-relaxed text-white/75 shadow-lg">
+                  <span className="block font-medium text-white">
+                    {L({ chs: `第 ${i + 1} 次释放`, en: `Cast ${i + 1}` })}
+                  </span>
+                  {row.shown.map((part) => (
+                    <span key={part.partIndex} className="block tabular-nums">
+                      {partLabel(part)}：{Math.round(part.amount).toLocaleString('en-US')}
+                    </span>
+                  ))}
+                  <span className="block border-t border-white/10 pt-0.5 tabular-nums text-white/50">
+                    {L({ chs: '合计', en: 'Total' })}：{Math.round(row.shownTotal).toLocaleString('en-US')}
+                  </span>
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {rows.length > 0 && <div className="flex gap-[2px] px-2 text-[9px] tabular-nums text-white/25">
+        {rows.map((row, i) => (
+          <span key={row.entryId} className="min-w-0 flex-1 text-center">
+            {rows.length <= 12 || i === 0 || i === rows.length - 1 || (i + 1) % every === 0
+              ? i + 1
+              : ''}
+          </span>
+        ))}
+      </div>}
+      <div className="flex items-center justify-between px-1 text-[9px] text-white/25">
+        <span>{L({ chs: '横轴：该段的第几次释放', en: 'X: cast number of this segment' })}</span>
+        <span>{L({ chs: `共 ${rows.length} 次`, en: `${rows.length} cast(s)` })}</span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A dark, portalled popover shared by both selectors.
+ *
+ * The native `select` popup is drawn by Windows, not by the page: on this dark UI
+ * it opened as a white panel and, with the complete source table now available,
+ * grew tall enough to cover the summary. A portal also keeps it out of the axis's
+ * clipping and scrolling containers.
+ */
+function DropdownPanel({ anchor, onClose, width, maxHeight, children }) {
+  const menuRef = useRef(null);
+  const [rect, setRect] = useState(null);
+
+  useEffect(() => {
+    if (!anchor) return undefined;
+    const place = () => {
+      const r = anchor.getBoundingClientRect();
+      const height = Math.min(maxHeight, menuRef.current?.offsetHeight || maxHeight);
+      const below = window.innerHeight - r.bottom;
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
+      const top = below < height + 8 && r.top > height + 8
+        ? r.top - height - 4
+        : Math.min(r.bottom + 4, window.innerHeight - height - 8);
+      // A scroll inside the menu also reaches this capture listener. Returning the
+      // same object for an unchanged position prevents that scroll from re-running
+      // the "focus the selected option" effect, which used to yank the list back to
+      // the current item and made the lower entries impossible to reach.
+      setRect((prev) => (
+        prev && Math.abs(prev.left - left) < 1 && Math.abs(prev.top - top) < 1
+          ? prev
+          : { left, top }
+      ));
+    };
+    place();
+    // The first pass runs before the portal exists and can only estimate its
+    // height; one frame later the real box is measurable.
+    const frame = requestAnimationFrame(place);
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener('scroll', place, true);
+      window.removeEventListener('resize', place);
+    };
+  }, [anchor, width, maxHeight]);
+
+  useEffect(() => {
+    if (!rect) return undefined;
+    const target = menuRef.current?.querySelector('[aria-selected="true"]')
+      || menuRef.current?.querySelector('[role="option"]');
+    target?.focus({ preventScroll: true });
+    target?.scrollIntoView({ block: 'nearest' });
+    return undefined;
+  }, [rect]);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      onClose?.();
+      anchor?.focus();
+    };
+    const onClick = (e) => {
+      if (anchor?.contains(e.target)) return;
+      if (menuRef.current?.contains(e.target)) return;
+      onClose?.();
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onClick);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onClick);
+    };
+  }, [anchor, onClose]);
+
+  const onKeyDown = (e) => {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
+    const items = [...(menuRef.current?.querySelectorAll('[role="option"]') || [])];
+    if (!items.length) return;
+    e.preventDefault();
+    const current = items.indexOf(document.activeElement);
+    let next = 0;
+    if (e.key === 'End') next = items.length - 1;
+    else if (e.key === 'ArrowUp') next = current <= 0 ? items.length - 1 : current - 1;
+    else if (e.key === 'ArrowDown') next = current < 0 || current === items.length - 1 ? 0 : current + 1;
+    items[next].focus({ preventScroll: true });
+    items[next].scrollIntoView({ block: 'nearest' });
+  };
+
+  if (!rect) return null;
+  return createPortal(
+    <div
+      ref={menuRef}
+      data-dropdown
+      style={{ position: 'fixed', left: rect.left, top: rect.top, width, maxHeight }}
+      onKeyDown={onKeyDown}
+      className="z-[80] overflow-y-auto overscroll-contain rounded-xl border border-white/10 bg-[#141418] p-1.5 shadow-2xl shadow-black/80"
+    >
+      {children}
+    </div>,
+    document.body,
+  );
+}
+
+/** The complete stage list. Each row is one clear, full-width target. */
+function SegmentMenu({ anchor, groups, value, onPick, onClose }) {
+  const labelCounts = new Map();
+  for (const group of groups) {
+    const label = primaryNameOf(group);
+    labelCounts.set(label, (labelCounts.get(label) || 0) + 1);
+  }
+  const maxHeight = Math.min(420, Math.max(260, window.innerHeight - 120));
+
+  return (
+    <DropdownPanel anchor={anchor} onClose={onClose} width={320} maxHeight={maxHeight}>
+      <div role="listbox" aria-label="伤害段" className="flex flex-col">
+        {groups.map((group) => {
+          const on = group.key === value;
+          const primary = primaryNameOf(group);
+          const source = secondaryNameOf(group, labelCounts.get(primary) > 1);
+          return (
+            <button
+              key={group.key}
+              type="button"
+              role="option"
+              aria-selected={on}
+              aria-label={segmentLabel(group)}
+              data-segment-option={group.key}
+              title={segmentLabel(group)}
+              onClick={() => onPick(group.key)}
+              className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left outline-none transition-colors focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[#7fd4c1]/50 ${
+                on
+                  ? 'bg-[#7fd4c1]/15 text-white'
+                  : group.occurrences.length
+                    ? 'text-white/65 hover:bg-white/[0.06] hover:text-white/90'
+                    : 'text-white/30 hover:bg-white/[0.04] hover:text-white/65'
+              }`}
+            >
+              {sourceGlyph(group.source, 14)}
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[11px]">{primary}</span>
+                {source && (
+                  <span className="block truncate text-[9px] leading-tight text-white/25">{source}</span>
+                )}
+              </span>
+              {on && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#7fd4c1]" />}
+            </button>
+          );
+        })}
+      </div>
+    </DropdownPanel>
+  );
+}
+
+/** The parts of one compound stage, such as the two halves of 四风将起. */
+function PartMenu({ anchor, parts, value, partLabel, allLabel, onPick, onClose }) {
+  const rows = [{ value: 'all', label: allLabel }].concat(
+    parts.map((part) => ({ value: String(part.partIndex), label: partLabel(part) })),
+  );
+  return (
+    <DropdownPanel anchor={anchor} onClose={onClose} width={190} maxHeight={260}>
+      <div role="listbox" aria-label={allLabel} className="flex flex-col">
+        {rows.map((row) => {
+          const on = row.value === value;
+          return (
+            <button
+              key={row.value}
+              type="button"
+              role="option"
+              aria-selected={on}
+              onClick={() => onPick(row.value)}
+              className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[11px] outline-none transition-colors focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[#7fd4c1]/50 ${
+                on ? 'bg-[#7fd4c1]/15 text-white' : 'text-white/65 hover:bg-white/[0.06] hover:text-white/90'
+              }`}
+            >
+              <span className="min-w-0 flex-1 truncate">{row.label}</span>
+              {on && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#7fd4c1]" />}
+            </button>
+          );
+        })}
+      </div>
+    </DropdownPanel>
+  );
+}
+
+function sourceGlyph(source, size) {
+  if (!source) return null;
+  if (source.iconKind === 'element' && source.element) {
+    return <ElementGlyph element={source.element} size={size} />;
+  }
+  if (!source.icon) return null;
+  return (
+    <img
+      src={talentIconImg(source.icon)}
+      alt=""
+      className="shrink-0 rounded-sm object-contain"
+      style={{ width: size, height: size }}
+    />
+  );
+}
+
+function sourceNameOf(source) {
+  return source?.name || source?.chs || source?.nameEn || source?.en || source?.key || '';
+}
+
+/** The text that distinguishes an option; flat damage uses its elemental name. */
+function primaryNameOf(group) {
+  const source = sourceNameOf(group.source);
+  const stage = group.name || group.sourceKey || '';
+  if (source && stage && source !== stage && source.includes(stage)) return source;
+  return stage;
+}
+
+/** A source line only when it adds information the primary label does not. */
+function secondaryNameOf(group, ambiguous = false) {
+  const source = sourceNameOf(group.source);
+  const primary = primaryNameOf(group);
+  if (!source || source === primary || primary.includes(source)) return '';
+  return ambiguous ? source : '';
+}
+
+function segmentLabel(group) {
+  const source = sourceNameOf(group.source);
+  const primary = primaryNameOf(group);
+  if (!source || source === primary || primary.includes(source)) return primary;
+  return `${primary} · ${source}`;
+}
+
+const PART_RAMP = ['#c08fff', '#7fd4c1', '#f0b429', '#8fa6ff', '#e0729a', '#9ae06a'];
 
 /**
  * Slice colours, by position.
