@@ -60,7 +60,7 @@ const problem = buildProblem({
 });
 const hasLine = (prefix) => problem.split('\n').some((l) => l.startsWith(prefix));
 
-ok('the panel is written', problem.split('\n')[1] === 'panel 800 50 300 5 50 0 0 0');
+ok('the panel is written', problem.split('\n')[1] === 'panel 800 50 300 5 50 0 0 0 0');
 ok('every substat is declared, so the columns never move', problem.split('\n').filter((l) => l.startsWith('hit ')).length === 10);
 ok('each piece states its shape', hasLine('piece flower 4 9 6') && hasLine('piece plume 4 8 6'));
 ok('a disabled substat is simply left out', !hasLine('allow plume critDmg'));
@@ -86,9 +86,9 @@ ok('main.cpp declares the same monomial order',
   declared ? declared[0] : 'no order line found');
 
 const csv = [
-  'critRate,critDmg,total,A,C,R,dmg_never,dmg_crit,dmg_avg,is_current',
-  '3,1,4,1234.5,150.25,41.5,100,200,180.5,0',
-  ',,,1700,120,40,1000,2000,1800,1',
+  'critRate,critDmg,total,A,C,R,E,dmg_never,dmg_crit,dmg_avg,is_current',
+  '3,1,4,1234.5,150.25,41.5,120,100,200,180.5,0',
+  ',,,1700,120,40,200,1000,2000,1800,1',
 ].join('\n');
 const parsed = parseResult(csv);
 ok('the header names the substats and stops before the roll total',
@@ -96,6 +96,7 @@ ok('the header names the substats and stops before the roll total',
 ok('a row reads its roll counts by name', parsed.rows[0].hits.critDmg === 1);
 ok('the roll total is read from its own column, not summed', parsed.rows[0].total === 4);
 ok('the damage columns are read', parsed.rows[0].A === 1234.5 && parsed.rows[0].avg === 180.5);
+ok('the EM panel column is read', parsed.rows[0].E === 120 && parsed.rows[1].E === 200);
 ok('the current-build row is flagged', parsed.rows[1].isCurrent === true);
 ok('the current-build row reports no rolls (it is not an allocation)', parsed.rows[1].hasHits === false);
 ok('a search row reports rolls', parsed.rows[0].hasHits === true);
@@ -103,6 +104,7 @@ ok('a search row reports rolls', parsed.rows[0].hasHits === true);
 // column, and a caller holding an older file must not see a phantom substat.
 const legacy = parseResult(['critRate,critDmg,A,C,R,dmg_never,dmg_crit,dmg_avg,is_current', '2,1,100,50,5,1,2,1.5,0'].join('\n'));
 ok('a header without the roll total still reads', legacy.stats.join(',') === 'critRate,critDmg' && legacy.rows[0].total === 3);
+ok('a header without an EM column still reads', legacy.rows[0].E === 0);
 
 const EXE = path.join('native', 'optimize', 'optimize.exe');
 const DATA = path.join('public', 'data');
@@ -238,9 +240,12 @@ if (!fs.existsSync(EXE)) {
       console.log('SKIP  the expression check (needs ' + CFG + ')');
     } else {
       const read = (p) => JSON.parse(fs.readFileSync(path.join(DATA, p), 'utf8'));
-      const { mergedExpression, panelOf, totalAtkOf, evaluate, expected } = await import('../src/lib/merged-expression.js');
+      const {
+        damageAt, mergedExpression, panelOf, totalAtkOf, variablesOf, selfCheck,
+      } = await import('../src/lib/merged-expression.js');
       const { unpackAxes } = await import('../src/lib/axes-pool.js');
       const { activeArtifacts } = await import('../src/lib/artifact-sets.js');
+      const { computeAxis } = await import('../src/lib/axis-compute.js');
 
       const catalogue = {
         chars: read('charlist.json'),
@@ -271,12 +276,156 @@ if (!fs.existsSync(EXE)) {
 
       // The comparison row IS the worn panel, at ANY roll scale: the scale models
       // hypothetical candidate rolls, not the build the user actually wears.
-      const ref = { A: totalAtkOf(cur), C: cur.critDmg, R: cur.critRate };
+      const ref = { A: totalAtkOf(cur), C: cur.critDmg, R: cur.critRate, E: cur.em };
       ok('the comparison panel is the worn panel',
         Math.abs(ref.A - totalAtkOf(cur)) < 1e-9
         && Math.abs(ref.C - cur.critDmg) < 1e-9
         && Math.abs(ref.R - cur.critRate) < 1e-9,
         JSON.stringify(ref) + ' vs ' + totalAtkOf(cur) + '/' + cur.critDmg + '/' + cur.critRate);
+
+      /** Clone rows while forcing a damage type / reaction / panel edit on this char. */
+      const forced = (list, { element, reactionKey, over = {}, critMode } = {}) => {
+        const patch = (e) => {
+          if (e.kind === 'segment') {
+            return { ...e, children: (e.children || []).map(patch) };
+          }
+          if (e.charId !== charId) return e;
+          const out = {
+            ...e,
+            statOverrides: { ...(e.statOverrides || {}), ...over },
+          };
+          if (element) out.element = element;
+          if (reactionKey) out.reactionKey = reactionKey;
+          if (critMode) out.critMode = critMode;
+          if (Array.isArray(e.children)) {
+            out.children = e.children.map((c) => ({
+              ...c,
+              ...(element ? { element } : {}),
+              ...(critMode ? { critMode } : {}),
+              statOverrides: { ...(c.statOverrides || {}), ...over },
+            }));
+          }
+          return out;
+        };
+        return list.map(patch);
+      };
+      const totalForChar = (list) => {
+        const ax = computeAxis(list, team, catalogue, talentDamage);
+        let sum = 0;
+        const visit = (e) => {
+          if (e.kind === 'segment') return (e.children || []).forEach(visit);
+          if (e.charId === charId) sum += ax.byId.get(e.id)?.total || 0;
+        };
+        list.forEach(visit);
+        return sum;
+      };
+      const rel = (a, b) => Math.abs(a - b) / Math.max(1, Math.abs(b));
+
+      // A loop is a CONTAINER. Its members used to be invisible to the merge, so a
+      // rotated axis produced an expression of zero.
+      const loopEntries = [{
+        id: 'loop-regression', kind: 'segment', charId: 'none', name: 'loop',
+        children: entries,
+      }];
+      const exprLoop = mergedExpression({
+        entries: loopEntries, team, catalogue, talentDamage, charId,
+      });
+      const flatAt = damageAt(expr2, variablesOf(expr2.base));
+      const loopAt = damageAt(exprLoop, variablesOf(expr2.base));
+      ok('a loop contributes its members to the merge',
+        exprLoop && exprLoop.entries === expr2.entries && exprLoop.parts === expr2.parts,
+        exprLoop && exprLoop.entries + '/' + exprLoop.parts + ' vs ' + expr2.entries + '/' + expr2.parts);
+      ok('a loop has the same damage as the flat axis',
+        Math.abs(loopAt.never - flatAt.never) <= 1e-7 * Math.max(1, Math.abs(flatAt.never))
+        && Math.abs(loopAt.crit - flatAt.crit) <= 1e-7 * Math.max(1, Math.abs(flatAt.crit))
+        && Math.abs(loopAt.avg - flatAt.avg) <= 1e-7 * Math.max(1, Math.abs(flatAt.avg)));
+
+      // Non-Anemo/Pyro elemental DMG and Physical have their own panel fields.
+      // Missing any of them made the expression understate every such hit.
+      const cryoRows = forced(entries, { element: 'Cryo', over: { cryoDmg: 50 }, critMode: 'avg' });
+      const exprCryo = mergedExpression({
+        entries: cryoRows, team, catalogue, talentDamage, charId,
+      });
+      const cryoAt = damageAt(exprCryo, variablesOf(exprCryo.base));
+      ok('a Cryo goblet is part of the expression',
+        rel(cryoAt.avg, totalForChar(cryoRows)) < 1e-9,
+        cryoAt.avg + ' vs ' + totalForChar(cryoRows));
+
+      const physRows = forced(entries, { element: 'Physical', over: { physBonus: 50 }, critMode: 'avg' });
+      const exprPhys = mergedExpression({
+        entries: physRows, team, catalogue, talentDamage, charId,
+      });
+      const physAt = damageAt(exprPhys, variablesOf(exprPhys.base));
+      ok('a Physical goblet is part of the expression',
+        rel(physAt.avg, totalForChar(physRows)) < 1e-9,
+        physAt.avg + ' vs ' + totalForChar(physRows));
+
+      // Amplifying reactions depend on EM rationally. The expression carries the
+      // polynomial part separately and must match at MORE THAN the baseline EM.
+      const ampRows = forced(entries, { reactionKey: 'vaporize', critMode: 'avg' });
+      const exprAmp = mergedExpression({
+        entries: ampRows, team, catalogue, talentDamage, charId,
+      });
+      ok('an amplifying reaction produces EM coefficients', exprAmp.hasAmp === true);
+      for (const target of [exprAmp.base.em || 0, (exprAmp.base.em || 0) + 400]) {
+        const engineRows = forced(entries, { reactionKey: 'vaporize', over: { em: target }, critMode: 'avg' });
+        const v = { ...variablesOf(exprAmp.base), E: target };
+        const got = damageAt(exprAmp, v).avg;
+        const want = totalForChar(engineRows);
+        ok('the reaction expression matches the engine at EM=' + target,
+          rel(got, want) < 1e-9, got + ' vs ' + want);
+      }
+
+      // Deterministic random panels, including EM, against the engine itself.
+      const seeded = () => {
+        let state = 0x9e3779b9;
+        return () => {
+          state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+          return state / 4294967296;
+        };
+      };
+      const loopWorst = selfCheck(exprLoop, {
+        entries: loopEntries, team, catalogue, talentDamage, samples: 4, rng: seeded(),
+      });
+      ok('selfCheck agrees on a loop axis',
+        Math.max(loopWorst.never, loopWorst.crit, loopWorst.avg) < 1e-9,
+        JSON.stringify(loopWorst));
+      const ampWorst = selfCheck(exprAmp, {
+        entries: ampRows, team, catalogue, talentDamage, samples: 4, rng: seeded(),
+      });
+      ok('selfCheck agrees with amplifying reactions',
+        Math.max(ampWorst.never, ampWorst.crit, ampWorst.avg) < 1e-9,
+        JSON.stringify(ampWorst));
+
+      // The C++ side carries amplifying reactions as `em(E + buff) x polynomial`.
+      // A small one-piece problem is enough to prove that EM reaches the search and
+      // that every returned row still evaluates to the same expression.
+      const ampPiece = pieceSpec({
+        slotKey: 'flower', mainStat: 'hp', upgrades: 0, lines: 2, maxPerLine: 2,
+        allows: [
+          { key: 'em', state: 1 }, { key: 'critRate', state: 1 },
+          { key: 'critDmg', state: 1 }, { key: 'atkPct', state: 1 },
+        ],
+      });
+      const ampPath = tmp('amp');
+      fs.writeFileSync(ampPath, buildProblem({
+        expr: exprAmp, panel: base, pieces: [ampPiece], hitScale: 1,
+      }));
+      const ampOut = execFileSync(EXE, [ampPath], { encoding: 'utf8', maxBuffer: 1 << 30 });
+      fs.rmSync(ampPath, { force: true });
+      const ampRes = parseResult(ampOut);
+      let ampWorstBinary = 0;
+      for (const row of ampRes.rows.filter((r) => r.hasHits)) {
+        const want = damageAt(exprAmp, {
+          A: row.A, C: row.C, R: row.R, E: row.E,
+          U: base.anemoDmg, P: base.pyroDmg, G: base.dmgBonus,
+        });
+        ampWorstBinary = Math.max(ampWorstBinary, rel(row.avg, want.avg));
+      }
+      ok('the binary carries EM through amplifying reactions', ampWorstBinary < 1e-8,
+        'worst rel ' + ampWorstBinary.toExponential(2));
+      ok('an EM roll produces a distinct outcome',
+        new Set(ampRes.rows.filter((r) => r.hasHits).map((r) => r.E.toFixed(3))).size > 1);
 
       const run = (piecesSpec, name) => {
         const text = buildProblem({ expr: expr2, panel: base, ref, pieces: piecesSpec, hitScale: 1 });
@@ -293,9 +442,12 @@ if (!fs.existsSync(EXE)) {
       const refRow = res.rows.find((r) => r.isCurrent);
       ok('the reference row is present', !!refRow);
       if (refRow) {
-        const V = { A: ref.A, C: ref.C, R: ref.R, U: base.anemoDmg, P: base.pyroDmg, G: base.dmgBonus };
+        const V = {
+          A: ref.A, C: ref.C, R: ref.R, E: ref.E,
+          U: base.anemoDmg, P: base.pyroDmg, G: base.dmgBonus,
+        };
         const rel = (a, b) => Math.abs(a - b) / Math.max(1, Math.abs(b));
-        const want = { never: evaluate(expr2.coeffs.never, V), crit: evaluate(expr2.coeffs.crit, V), avg: expected(expr2, V) };
+        const want = damageAt(expr2, V);
         ok('the reference row reproduces the current build',
           rel(refRow.never, want.never) < 1e-9 && rel(refRow.crit, want.crit) < 1e-9 && rel(refRow.avg, want.avg) < 1e-9,
           refRow.avg + ' vs ' + want.avg);
@@ -307,12 +459,16 @@ if (!fs.existsSync(EXE)) {
       const seenKeys = new Set();
       for (const row of res.rows) {
         if (!row.hasHits) continue;
-        const V = { A: row.A, C: row.C, R: row.R, U: base.anemoDmg, P: base.pyroDmg, G: base.dmgBonus };
-        for (const [got, want] of [
-          [row.never, evaluate(expr2.coeffs.never, V)],
-          [row.crit, evaluate(expr2.coeffs.crit, V)],
-          [row.avg, expected(expr2, V)],
-        ]) worst = Math.max(worst, Math.abs(got - want) / Math.max(1, Math.abs(want)));
+        const V = {
+          A: row.A, C: row.C, R: row.R, E: row.E,
+          U: base.anemoDmg, P: base.pyroDmg, G: base.dmgBonus,
+        };
+        const want = damageAt(expr2, V);
+        for (const [got, expected] of [
+          [row.never, want.never],
+          [row.crit, want.crit],
+          [row.avg, want.avg],
+        ]) worst = Math.max(worst, Math.abs(got - expected) / Math.max(1, Math.abs(expected)));
         seenKeys.add(row.A.toFixed(3) + '|' + row.C.toFixed(3) + '|' + row.R.toFixed(3));
       }
       ok('every returned row re-evaluates to the expression', worst < 1e-9, 'worst rel ' + worst.toExponential(2));

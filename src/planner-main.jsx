@@ -221,13 +221,13 @@ function Page() {
   // sequences, and they belong to the same team, so they live together instead of
   // as documents the user has to remember to save separately.
   //
-  // NORMALISED ON LOAD, not only on save. `saveAxes` repairs what it WRITES, so
-  // storage was upgraded while the in-memory state kept the old shape -- which is
-  // the one every component actually renders from. A stored `enemyRes: 30` was
-  // therefore spread across the eight new fields in localStorage and stayed a
-  // single dead key in the panel on screen, so the resistance silently read as
-  // its 10% default until the next reload. Running the same repair here means the
-  // state and the stored copy cannot describe different documents.
+  // NORMALISED ON LOAD, rather than trusting storage to have the current shape.
+  // A document may predate a schema change (or come from an older build), while
+  // the in-memory state is what every component actually renders from. A stored
+  // `enemyRes: 30` used to stay a single dead key in the panel on screen, so the
+  // resistance silently read as its 10% default until the next reload. Running the
+  // same repair here means the state and the stored copy cannot describe different
+  // documents.
   const [axesState, setAxesState] = useState(() => normaliseAxes(loadAxes()));
 
   /**
@@ -290,9 +290,58 @@ function Page() {
   // from. Transient by nature -- a menu left open across a reload would be a
   // surprise rather than a convenience -- so it is not in `pool-view`.
   const [axisSourceOpen, setAxisSourceOpen] = useState(false);
+  /**
+   * Persist AXES on a trailing edge.
+   *
+   * `saveAxes` packs the whole axis list and stringifies it (hundreds of KB for a
+   * real rotation), so doing that on every keystroke was ~11 ms of synchronous
+   * work per edit. The latest state is kept in a ref and written once the user
+   * pauses; page hide/unload and unmount flush it immediately, so a delayed write
+   * cannot lose the last change.
+   */
+  const latestAxes = useRef(axesState);
+  const lastSavedAxes = useRef(axesState);
+  const axesSaveTimer = useRef(null);
+  const flushAxes = useCallback(() => {
+    if (axesSaveTimer.current != null) {
+      clearTimeout(axesSaveTimer.current);
+      axesSaveTimer.current = null;
+    }
+    // A reload must not write the state the page STARTED with over a document
+    // another tab (or a test seeding storage) has written since. Nothing has
+    // changed here, so there is nothing to flush.
+    if (latestAxes.current === lastSavedAxes.current) return;
+    lastSavedAxes.current = latestAxes.current;
+    saveAxes(latestAxes.current);
+  }, []);
   useEffect(() => {
-    saveAxes(axesState);
+    latestAxes.current = axesState;
+    if (axesState === lastSavedAxes.current) return undefined;
+    if (axesSaveTimer.current != null) clearTimeout(axesSaveTimer.current);
+    axesSaveTimer.current = setTimeout(() => {
+      axesSaveTimer.current = null;
+      lastSavedAxes.current = latestAxes.current;
+      saveAxes(latestAxes.current);
+    }, 400);
+    return () => {
+      if (axesSaveTimer.current != null) clearTimeout(axesSaveTimer.current);
+    };
   }, [axesState]);
+  useEffect(() => {
+    const onHide = () => flushAxes();
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') flushAxes();
+    };
+    window.addEventListener('beforeunload', onHide);
+    window.addEventListener('pagehide', onHide);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('beforeunload', onHide);
+      window.removeEventListener('pagehide', onHide);
+      document.removeEventListener('visibilitychange', onVisibility);
+      flushAxes();
+    };
+  }, [flushAxes]);
 
   const activeAxis = axesState.axes.find((a) => a.id === axesState.activeId) || axesState.axes[0];
   const entries = activeAxis.entries;
@@ -593,10 +642,21 @@ function Page() {
    * switch from leaking edits into the axis you left.
    */
   const updateEntries = useCallback((fn) => {
-    setAxesState((s) => ({
-      ...s,
-      axes: s.axes.map((a) => (a.id === s.activeId ? { ...a, entries: fn(a.entries) } : a)),
-    }));
+    setAxesState((s) => {
+      let changed = false;
+      const axes = s.axes.map((a) => {
+        if (a.id !== s.activeId) return a;
+        const next = fn(a.entries);
+        // Preserve the whole state reference for a no-op. `Segment.update` already
+        // returns the original list when the target row is unchanged; mapping a
+        // fresh axis around that list here would throw the signal away and restart
+        // the same report -> render cycle one level higher.
+        if (next === a.entries) return a;
+        changed = true;
+        return { ...a, entries: next };
+      });
+      return changed ? { ...s, axes } : s;
+    });
   }, []);
 
   /**

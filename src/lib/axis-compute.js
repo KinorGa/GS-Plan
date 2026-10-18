@@ -37,7 +37,7 @@ import { scopeForUnit } from './buff-formula';
  * The team is indexed by character id up front rather than searched per entry: a
  * nine-row axis would otherwise scan the catalogue nine times per render.
  */
-function contextFor(team, catalogue, talentDamage) {
+export function createContext(team, catalogue, talentDamage) {
   const byCharId = new Map();
   for (const u of team || []) {
     if (u?.id) byCharId.set(u.id, u);
@@ -54,7 +54,36 @@ function contextFor(team, catalogue, talentDamage) {
   for (const u of team || []) {
     if (u?.id) scopeByCharId.set(u.id, scopeForUnit(u, catalogue));
   }
-  return { byCharId, catalogue, talentDamage, scopeByCharId };
+  // Per-character derivations do not depend on the row. A loop-heavy axis has
+  // hundreds of rows from the same few characters, and deriving the panel and
+  // rebuilding the same source table for every row was the majority of the
+  // compute time. The caches live for one axis computation, so a team edit still
+  // creates a fresh context.
+  return {
+    byCharId, catalogue, talentDamage, scopeByCharId,
+    panelByCharId: new Map(),
+    sourcesByCharId: new Map(),
+  };
+}
+
+/** The derived panel VALUES for a character, memoised inside one context. */
+function derivedFor(ctx, char) {
+  if (!char?.detail) return null;
+  if (ctx.panelByCharId.has(char.id)) return ctx.panelByCharId.get(char.id);
+  const weapon = char.weaponId ? ctx.catalogue?.weapons?.[char.weaponId] || null : null;
+  const derived = derivePanel({
+    charId: char.id,
+    detail: char.detail,
+    level: char.level,
+    element: char.element,
+    weaponId: char.weaponId,
+    weapon,
+    artifacts: char.artifacts,
+    stats: ctx.catalogue?.stats,
+  });
+  const values = derived?.values || null;
+  ctx.panelByCharId.set(char.id, values);
+  return values;
 }
 
 /** The stat panel one entry computes from. */
@@ -63,26 +92,31 @@ export function panelForEntry(entry, ctx) {
   // No character chosen, or its data has not arrived: the card's own defaults are
   // what the UI shows, so they are what the number is computed from.
   const charData = char?.detail || null;
-  let derived = null;
-  if (charData) {
-    const weapon = char.weaponId ? ctx.catalogue?.weapons?.[char.weaponId] || null : null;
-    derived = derivePanel({
-      charId: char.id,
-      detail: charData,
-      level: char.level,
-      element: char.element,
-      weaponId: char.weaponId,
-      weapon,
-      artifacts: char.artifacts,
-      stats: ctx.catalogue?.stats,
-    });
-  }
+  const derived = derivedFor(ctx, char);
   return {
     char,
     charData,
     // The EDITS sit on top of the derived values, exactly as the card does it.
-    panel: { ...defaultStats(), ...(derived?.values || {}), ...(entry.statOverrides || {}) },
+    panel: { ...defaultStats(), ...(derived || {}), ...(entry.statOverrides || {}) },
   };
+}
+
+/**
+ * The talent-source table for one character, memoised inside one context.
+ *
+ * A compound row and every member of a loop call this repeatedly for the same
+ * character. The table depends only on the character and its talents, so one
+ * build per axis is enough.
+ */
+export function sourcesForEntry(entry, ctx) {
+  const char = ctx.byCharId.get(entry.charId) || null;
+  if (!char?.detail) return [];
+  if (ctx.sourcesByCharId.has(entry.charId)) return ctx.sourcesByCharId.get(entry.charId);
+  const sources = buildSources(
+    char.detail, char.element, ctx.talentDamage, entry.charId, char.talents
+  );
+  ctx.sourcesByCharId.set(entry.charId, sources);
+  return sources;
 }
 
 /**
@@ -180,7 +214,7 @@ function computePart({
  * sums, so a caller that only wants "the row's number" does not have to add up.
  */
 export function computeEntry(entry, ctx) {
-  if (!entry || entry.charId === 'none') return null;
+  if (!entry) return null;
 
   /**
    * A LOOP SUMS ITS ENTRIES -- it is not one.
@@ -208,12 +242,12 @@ export function computeEntry(entry, ctx) {
     };
   }
 
+  if (entry.charId === 'none') return null;
+
   const { char, charData, panel } = panelForEntry(entry, ctx);
   if (!charData) return null;
 
-  const sources = buildSources(
-    charData, char?.element, ctx.talentDamage, entry.charId, char?.talents
-  );
+  const sources = sourcesForEntry(entry, ctx);
   if (!sources.length) return null;
 
   const children = Array.isArray(entry.children) ? entry.children : null;
@@ -268,7 +302,7 @@ export function computeEntry(entry, ctx) {
  * be able to tell "no number yet" from "zero damage".
  */
 export function computeAxis(entries, team, catalogue, talentDamage) {
-  const ctx = contextFor(team, catalogue, talentDamage);
+  const ctx = createContext(team, catalogue, talentDamage);
   const byId = new Map();
   let total = 0;
   let perHit = 0;

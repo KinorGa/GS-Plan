@@ -32,19 +32,20 @@
 //   bites (rate 80 and 100), not whether a row is variable.
 
 import { computeDamage } from './damage';
-import { computeAxis, panelForEntry } from './axis-compute';
+import {
+  computeAxis, createContext, panelForEntry, sourcesForEntry,
+} from './axis-compute';
 import { derivePanel } from './stat-derive';
-import { buildSources } from '../char-sources';
 import { reactionByKey } from '../DamageCard';
 import {
   foldDrops, foldZoneDrops, splitZoneFactors, mergeStats,
 } from '../components/buff-model';
-import { scopeForUnit } from './buff-formula';
+import { flatten } from './rotation-segment';
 
 /** Panel keys the expression is a function of -- an override on one of these is a trap. */
 export const PANEL_KEYS = [
   'atk', 'atkPct', 'flatAtk', 'critRate', 'critDmg',
-  'anemoDmg', 'pyroDmg', 'dmgBonus',
+  'anemoDmg', 'pyroDmg', 'dmgBonus', 'em',
 ];
 
 const CRIT_RATE_CAP = 100;
@@ -56,14 +57,6 @@ const CRIT_RATE_CAP = 100;
  * same per-character `$` scopes, because a dropped card's formula reads ITS OWN
  * owner's panel.
  */
-function contextFor(team, catalogue, talentDamage) {
-  const byCharId = new Map();
-  for (const u of team || []) if (u?.id) byCharId.set(u.id, u);
-  const scopeByCharId = new Map();
-  for (const u of team || []) if (u?.id) scopeByCharId.set(u.id, scopeForUnit(u, catalogue));
-  return { byCharId, catalogue, talentDamage, scopeByCharId };
-}
-
 /**
  * One part's coefficients, read out of the engine's OWN numbers.
  *
@@ -74,8 +67,8 @@ function contextFor(team, catalogue, talentDamage) {
  * catches it if they ever do.
  */
 function partsOf(entry, ctx) {
-  const { char, charData, panel } = panelForEntry(entry, ctx);
-  const sources = buildSources(charData, char?.element, ctx.talentDamage, entry.charId, char?.talents);
+  const { char, panel } = panelForEntry(entry, ctx);
+  const sources = sourcesForEntry(entry, ctx);
   if (!sources.length) return [];
 
   const mk = (partIndex, element, drops, overrides, multOv, hitsOv) => {
@@ -101,9 +94,10 @@ function partsOf(entry, ctx) {
     // Always evaluated as `crit`: that mode's crit factor is exactly `1 + cd`,
     // so `cdBuff` comes out as the row's CRIT-DMG buff regardless of what the
     // entry is set to.
+    const reaction = reactionByKey(entry.reactionKey ?? sel?.reactionKey);
     const r = computeDamage(withBuffs, {
       stage: { mult: partMult, hits: partHits, bonus: stage.bonus },
-      reaction: reactionByKey(entry.reactionKey ?? sel?.reactionKey),
+      reaction,
       element: usedElement,
       critMode: 'crit',
       zoneMult,
@@ -116,18 +110,46 @@ function partsOf(entry, ctx) {
     // without the engine having to hand `flatDmg` over separately.
     const baseVal = r.withBonus / (1 + r.bonusPct / 100);
     const ownKey = usedElement === 'Anemo' ? 'anemoDmg' : usedElement === 'Pyro' ? 'pyroDmg' : null;
+    const fixedKey = usedElement === 'Physical'
+      ? 'physBonus'
+      : usedElement
+        ? `${String(usedElement)[0].toLowerCase()}${String(usedElement).slice(1)}Dmg`
+        : null;
+    const ownIsVariable = ownKey === 'anemoDmg' || ownKey === 'pyroDmg';
+    const fixedPanel = fixedKey && !ownIsVariable ? Number(panel[fixedKey]) || 0 : 0;
+    const fixedBuff = fixedKey && !ownIsVariable
+      ? (Number(withBuffs[fixedKey]) || 0) - fixedPanel
+      : 0;
+    const amp = !!reaction?.amp;
+    const ampBase = amp
+      ? r.defMult * r.resMult * r.zoneMult * (partHits || 1)
+        * reaction.base * (1 + (Number(withBuffs.reactionBonus) || 0) / 100)
+      : 0;
+    const emBuff = (Number(withBuffs.em) || 0) - (Number(panel.em) || 0);
     return {
       element: usedElement,
       t: r.talent,
       f: baseVal - r.totalAtk * r.talent,
       aRow: r.totalAtk,
       // Everything panel-independent: defence, resistance, the user's own
-      // multiplier zone, the reaction factor, the hit count.
-      rest: r.defMult * r.resMult * r.reactMult * r.zoneMult * (partHits || 1),
+      // multiplier zone, the reaction factor, the hit count. An amplifying
+      // reaction's EM factor is deliberately NOT here: it is rational in EM, so
+      // it gets its own coefficient family and is evaluated per candidate.
+      rest: amp
+        ? 0
+        : r.defMult * r.resMult * r.reactMult * r.zoneMult * (partHits || 1),
+      amp,
+      ampBase,
+      emBuff,
       // The row's OWN buff only -- `withBuffs` is panel + buff, and the panel
       // part is the VARIABLE, so folding it in here would count it twice.
       animus: ownKey === 'anemoDmg' ? withBuffs.anemoDmg - panel.anemoDmg : 0,
       pyro: ownKey === 'pyroDmg' ? withBuffs.pyroDmg - panel.pyroDmg : 0,
+      // A non-Anemo/Pyro element's own DMG bonus and Physical's physBonus are
+      // not in the substat pool, so they can be folded into the constant part of
+      // the bonus bracket. This also captures the CURRENT goblet, which the
+      // optimiser never moves.
+      fixed: fixedPanel + fixedBuff,
       generic: withBuffs.dmgBonus - panel.dmgBonus,
       cdBuff: withBuffs.critDmg - panel.critDmg,
       crBuff: withBuffs.critRate - panel.critRate,
@@ -195,7 +217,7 @@ export function panelOf(team, catalogue, charId, artifacts) {
 export const totalAtkOf = (panel) =>
   panel.atk * (1 + panel.atkPct / 100) + panel.flatAtk;
 
-/** The panel's `A`, `U`, `P`, `G`, `C`, `R` -- what the rows are merged over. */
+/** The panel's `A`, `U`, `P`, `G`, `C`, `R`, `E` -- what the rows are merged over. */
 export function variablesOf(panel) {
   return {
     A: totalAtkOf(panel),
@@ -204,6 +226,7 @@ export function variablesOf(panel) {
     G: panel.dmgBonus || 0,
     C: panel.critDmg,
     R: panel.critRate,
+    E: panel.em || 0,
   };
 }
 
@@ -218,14 +241,16 @@ export function variablesOf(panel) {
  * that is the whole merge: a sum of sums. `mono` is '' for the constant term,
  * which is why the key building below looks the way it does.
  */
-function accumulate(rows, a0, qOf, filter) {
+function accumulate(rows, a0, qOf, filter, weightOf = (row) => row.rest) {
   const coeffs = {};
   const add = (k, v) => { if (v) coeffs[k] = (coeffs[k] || 0) + v; };
 
   for (const row of rows) {
     if (filter && !filter(row)) continue;
     const fp = (row.aRow - a0) * row.t + row.f;
-    const sigma = 1 + (row.animus + row.pyro + row.generic) / 100;
+    const weight = weightOf(row);
+    if (!weight) continue;
+    const sigma = 1 + (row.fixed + row.animus + row.pyro + row.generic) / 100;
     const forms = [
       { c: sigma, mono: '' },
       { c: row.animus ? 1 / 100 : 0, mono: 'U' },
@@ -235,7 +260,7 @@ function accumulate(rows, a0, qOf, filter) {
     const { q1, qC } = qOf(row);
     for (const { c, mono } of forms) {
       if (!c) continue;
-      const k = row.rest * c;
+      const k = weight * c;
       add(mono || '1', k * fp * q1);
       add(mono ? `A*${mono}` : 'A', k * row.t * q1);
       if (qC) {
@@ -245,6 +270,40 @@ function accumulate(rows, a0, qOf, filter) {
     }
   }
   return coeffs;
+}
+
+/**
+ * The amplifying-reaction factor: `1 + 2.78 * EM / (EM + 1400)`.
+ *
+ * Kept as a function rather than expanded into the monomials because it is
+ * RATIONAL in EM. The optimiser therefore carries the polynomial part of an amp
+ * row separately and multiplies it by this factor at evaluation time.
+ */
+export const emFactor = (em) => 1 + (2.78 * (Number(em) || 0)) / ((Number(em) || 0) + 1400);
+
+/** `Σ emFactor(E + row EM buff) * polynomial` for one family of amp terms. */
+export function evaluateAmp(groups, v) {
+  if (!groups?.length) return 0;
+  const E = Number(v?.E) || 0;
+  let sum = 0;
+  for (const g of groups) sum += emFactor(E + (Number(g.emBuff) || 0)) * evaluate(g.coeffs, v);
+  return sum;
+}
+
+/** Rows that share an EM buff can share one `emFactor`; group them by it. */
+function ampGroupsOf(rows, a0, qOf, filter) {
+  const keys = [...new Set(rows
+    .filter((r) => r.amp && (!filter || filter(r)))
+    .map((r) => Math.round(r.emBuff * 1e6) / 1e6))]
+    .sort((a, b) => a - b);
+  return keys.map((emBuff) => ({
+    emBuff,
+    coeffs: accumulate(
+      rows, a0, qOf,
+      (r) => r.amp && Math.abs(r.emBuff - emBuff) < 1e-6 && (!filter || filter(r)),
+      (r) => r.ampBase,
+    ),
+  }));
 }
 
 /** Evaluate a coefficient set at one point of the panel. `R` is not used here. */
@@ -271,19 +330,26 @@ export function evaluate(coeffs, v) {
  */
 export function expected(expr, v) {
   const R = v?.R || 0;
-  let sum = evaluate(expr.coeffs.never, v);
+  let sum = neverAt(expr, v);
   for (const g of expr.coeffs.avgGroups) {
     const mu = Math.min(R + g.crBuff, CRIT_RATE_CAP) / 100;
-    sum += mu * evaluate(g.delta, v);
+    sum += mu * (evaluate(g.delta, v) + evaluateAmp(g.amp, v));
   }
   return sum;
 }
 
+/** The never-crit and always-crit halves, including amplifying reactions. */
+export const neverAt = (expr, v) =>
+  evaluate(expr.coeffs.never, v) + evaluateAmp(expr.coeffs.ampNever, v);
+
+export const critAt = (expr, v) =>
+  evaluate(expr.coeffs.crit, v) + evaluateAmp(expr.coeffs.ampCrit, v);
+
 /** `{ never, crit, avg }` at one point of the panel, in one call. */
 export function damageAt(expr, v) {
   return {
-    never: evaluate(expr.coeffs.never, v),
-    crit: evaluate(expr.coeffs.crit, v),
+    never: neverAt(expr, v),
+    crit: critAt(expr, v),
     avg: expected(expr, v),
   };
 }
@@ -298,12 +364,16 @@ export function damageAt(expr, v) {
 export function mergedExpression({
   entries, team, catalogue, talentDamage, charId,
 }) {
-  const ctx = contextFor(team, catalogue, talentDamage);
+  const ctx = createContext(team, catalogue, talentDamage);
   const rows = [];
   let entryCount = 0;
   const suspicious = new Set();
 
-  for (const e of entries || []) {
+  // A rotation may hold SEGMENTS, whose members are the actual damage rows. A
+  // top-level walk silently found the segment (charId 'none') and none of its
+  // members, so a loop-heavy axis merged to zero. `flatten` is the same walk the
+  // axis and the row editor use.
+  for (const e of flatten(entries || []).map((x) => x.row)) {
     if (e.charId !== charId) continue;
     entryCount += 1;
     for (const p of partsOf(e, ctx)) rows.push(p);
@@ -320,6 +390,8 @@ export function mergedExpression({
 
   const never = accumulate(rows, a0, () => ({ q1: 1, qC: 0 }));
   const crit = accumulate(rows, a0, (r) => ({ q1: 1 + r.cdBuff / 100, qC: 1 / 100 }));
+  const ampNever = ampGroupsOf(rows, a0, () => ({ q1: 1, qC: 0 }));
+  const ampCrit = ampGroupsOf(rows, a0, (r) => ({ q1: 1 + r.cdBuff / 100, qC: 1 / 100 }));
 
   // One `delta` group per distinct CRIT-RATE buff, because the clamp makes rows
   // non-fungible: one at `R + 20` stops gaining at `R = 80`, one at `R` at 100.
@@ -328,6 +400,11 @@ export function mergedExpression({
   const avgGroups = buffs.map((crBuff) => ({
     crBuff,
     delta: accumulate(
+      rows, a0,
+      (r) => ({ q1: r.cdBuff / 100, qC: 1 / 100 }),
+      (r) => Math.abs(r.crBuff - crBuff) < 1e-6,
+    ),
+    amp: ampGroupsOf(
       rows, a0,
       (r) => ({ q1: r.cdBuff / 100, qC: 1 / 100 }),
       (r) => Math.abs(r.crBuff - crBuff) < 1e-6,
@@ -350,7 +427,8 @@ export function mergedExpression({
     parts: rows.length,
     base,
     variables: variablesOf(base),
-    coeffs: { never, crit, avgGroups },
+    coeffs: { never, crit, avgGroups, ampNever, ampCrit },
+    hasAmp: ampNever.length > 0 || ampCrit.length > 0,
     warnings,
     // NOT a guarantee of invariance: buff cards are the coefficients' real
     // input, so an optimiser allowed to move SETS must re-merge per combination.
@@ -370,24 +448,37 @@ export function selfCheck(expr, {
   entries, team, catalogue, talentDamage, samples = 40, rng = Math.random,
 }) {
   const id = expr.charId;
-  const mine = (entries || []).filter((e) => e.charId === id);
-  const withEdits = (over, mode) => (entries || []).map((e) => {
-    if (e.charId !== id) return e;
-    const merge = (s) => ({ ...(s || {}), ...(over || {}) });
-    const out = {
-      ...e,
-      statOverrides: merge(e.statOverrides),
-      ...(mode ? { critMode: mode } : {}),
+  const mine = flatten(entries || []).map((x) => x.row).filter((e) => e.charId === id);
+  const merge = (s, over) => ({ ...(s || {}), ...(over || {}) });
+  const withEdits = (over, mode) => {
+    const patchChild = (child, force) => {
+      const here = force || child.charId === id;
+      const out = here
+        ? {
+          ...child,
+          statOverrides: merge(child.statOverrides, over),
+          ...(mode ? { critMode: mode } : {}),
+        }
+        : child;
+      if (Array.isArray(child.children)) {
+        out.children = child.children.map((c) => patchChild(c, here));
+      }
+      return out;
     };
-    if (Array.isArray(e.children)) {
-      out.children = e.children.map((c) => ({
-        ...c,
-        statOverrides: merge(c.statOverrides),
-        ...(mode ? { critMode: mode } : {}),
-      }));
-    }
-    return out;
-  });
+    const patchRow = (e) => {
+      const here = e.charId === id;
+      const out = here
+        ? {
+          ...e,
+          statOverrides: merge(e.statOverrides, over),
+          ...(mode ? { critMode: mode } : {}),
+        }
+        : e;
+      if (Array.isArray(e.children)) out.children = e.children.map((c) => patchChild(c, here));
+      return out;
+    };
+    return (entries || []).map(patchRow);
+  };
   const totalFor = (list) => {
     const ax = computeAxis(list, team, catalogue, talentDamage);
     let sum = 0;
@@ -410,6 +501,7 @@ export function selfCheck(expr, {
       anemoDmg: rnd(-20, 150),
       pyroDmg: rnd(-20, 150),
       dmgBonus: rnd(-40, 200),
+      em: Math.max(0, (b.em || 0) + rnd(-150, 700)),
     };
     const v = {
       A: b.atk * (1 + over.atkPct / 100) + over.flatAtk,
@@ -418,11 +510,12 @@ export function selfCheck(expr, {
       G: over.dmgBonus,
       C: over.critDmg,
       R: over.critRate,
+      E: over.em,
     };
     const got = damageAt(expr, v);
     for (const mode of ['never', 'crit', 'avg']) {
       const eng = totalFor(withEdits(over, mode));
-      const rel = Math.abs(got[mode] - eng) / eng;
+      const rel = Math.abs(got[mode] - eng) / Math.max(1, Math.abs(eng));
       if (rel > worst[mode]) worst[mode] = rel;
     }
   }

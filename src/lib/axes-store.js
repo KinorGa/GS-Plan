@@ -320,6 +320,10 @@ export function loadAxes() {
     const legacy = localStorage.getItem(LEGACY_ROTATION_KEY);
     if (legacy) {
       const adopted = normaliseAxes(unpackAxes(JSON.parse(legacy)));
+      // Persist the adopted document before dropping the legacy key. Mount-time
+      // saving is now change-driven, so waiting for the first edit would make a
+      // reload before that edit lose the migration entirely.
+      saveAxes(adopted);
       // Removed so it cannot resurrect entries after a later clear.
       localStorage.removeItem(LEGACY_ROTATION_KEY);
       return adopted;
@@ -340,7 +344,11 @@ export function loadAxes() {
  */
 export function saveAxes(state) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(packAxes(normaliseAxes(state))));
+    // The planner normalises on LOAD and every mutation keeps that shape, so
+    // normalising the whole document again here only added a full tree walk to a
+    // hot path. Callers that start from an arbitrary document go through
+    // `normaliseAxes` explicitly (as the planner does).
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(packAxes(state)));
   } catch (err) {
     warnSaveFailed(err);
   }

@@ -39,12 +39,13 @@ import {
   statMeta, useArtifacts,
 } from '../../../lib/artifact';
 import {
-  DEFAULT_HIT_SCALE, MAX_ROLLS_PER_LINE, MONO_ORDER, SYMBOL_LABEL, UPGRADES_DEFAULT,
+  DEFAULT_HIT_SCALE, FEEDING_SUBSTATS, MAX_ROLLS_PER_LINE, MONO_ORDER, SYMBOL_LABEL,
+  UPGRADES_DEFAULT,
   allowedSubstatsFor, buildProblem, defaultPieces, impliedHits, importPieces, monoFactors,
   parseResult, pieceSpec, stripSubstats,
 } from '../../../lib/artifact-optimize';
 import {
-  evaluate, mergedExpression, panelOf, totalAtkOf, variablesOf,
+  damageAt, evaluate, evaluateAmp, mergedExpression, panelOf, totalAtkOf, variablesOf,
 } from '../../../lib/merged-expression';
 import { StatGlyph, StatMenu } from './StatGlyph';
 
@@ -221,7 +222,9 @@ function OptimizeDialog({ charId, build, optimize, onClose }) {
         // the scale models UNKNOWN candidate rolls, and applying it here would make
         // the comparison row weaker than the build on screen and inflate every gain.
         ref: curPanel
-          ? { A: totalAtkOf(curPanel), C: curPanel.critDmg, R: curPanel.critRate }
+          ? {
+            A: totalAtkOf(curPanel), C: curPanel.critDmg, R: curPanel.critRate, E: curPanel.em,
+          }
           : null,
         pieces,
         hitScale,
@@ -263,7 +266,12 @@ function OptimizeDialog({ charId, build, optimize, onClose }) {
   const best = sorted[0] || null;
   const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE));
   const view = sorted.slice(page * PAGE, page * PAGE + PAGE);
-  const worn = curPanel ? impliedHits(basePanel, curPanel) : 0;
+  const worn = curPanel
+    ? impliedHits(
+      basePanel, curPanel,
+      expr?.hasAmp ? [...FEEDING_SUBSTATS, 'em'] : FEEDING_SUBSTATS,
+    )
+    : 0;
 
   return createPortal(
     <div
@@ -416,6 +424,7 @@ function OptimizeDialog({ charId, build, optimize, onClose }) {
                   pageCount={pageCount}
                   setPage={setPage}
                   elapsed={elapsed}
+                  showEm={expr.hasAmp}
                 />
               )}
 
@@ -694,7 +703,7 @@ function Allocation({ row, L }) {
 }
 
 function Results({
-  L, result, best, current, order, setOrder, view, page, pageCount, setPage, elapsed,
+  L, result, best, current, order, setOrder, view, page, pageCount, setPage, elapsed, showEm,
 }) {
   // The headline must follow the SORT, not always the average. A crit-maximising
   // allocation deliberately trades average damage for crit damage, so showing its
@@ -772,8 +781,10 @@ function Results({
           <p className="mt-1.5 text-[10px] leading-relaxed text-white/45">
             {L({
               chs: 'A=' + fmt(current?.A) + ' · 暴击率=' + fmt(current?.R, 2) + '% · 暴伤=' + fmt(current?.C, 2)
+                + (showEm ? '% · 精通=' + fmt(current?.E) : '')
                 + '% · 期望=' + fmt(current?.avg) + ' · 暴击=' + fmt(current?.crit) + ' · 不暴击=' + fmt(current?.never),
               en: 'A=' + fmt(current?.A) + ' crit rate=' + fmt(current?.R, 2) + '% crit dmg=' + fmt(current?.C, 2)
+                + (showEm ? '% EM=' + fmt(current?.E) : '')
                 + '% expected=' + fmt(current?.avg) + ' crit=' + fmt(current?.crit) + ' no crit=' + fmt(current?.never),
             })}
           </p>
@@ -804,6 +815,7 @@ function Results({
               <th className="p-1 text-right">A</th>
               <th className="p-1 text-right">{L({ chs: '暴击率', en: 'CR' })}</th>
               <th className="p-1 text-right">{L({ chs: '暴伤', en: 'CD' })}</th>
+              {showEm && <th className="p-1 text-right">{L({ chs: '精通', en: 'EM' })}</th>}
               <th className={'p-1 text-right ' + (metric === 'avg' ? 'font-bold text-white' : 'text-white/50')}>{L({ chs: '期望', en: 'avg' })}</th>
               <th className={'p-1 text-right ' + (metric === 'crit' ? 'font-bold text-white' : 'text-white/50')}>{L({ chs: '暴击', en: 'crit' })}</th>
               <th className={'p-1 text-right ' + (metric === 'never' ? 'font-bold text-white' : 'text-white/50')}>{L({ chs: '不暴击', en: 'never' })}</th>
@@ -824,6 +836,7 @@ function Results({
                 <td className="p-1 text-right text-white/70">{fmt(row.A)}</td>
                 <td className="p-1 text-right text-white/70">{fmt(row.R, 2)}</td>
                 <td className="p-1 text-right text-white/70">{fmt(row.C, 2)}</td>
+                {showEm && <td className="p-1 text-right text-white/70">{fmt(row.E)}</td>}
                 <td className={'p-1 text-right ' + (metric === 'avg' ? 'font-bold text-white' : 'text-white/55')}>{fmt(row.avg)}</td>
                 <td className={'p-1 text-right ' + (metric === 'crit' ? 'font-bold text-white' : 'text-white/55')}>{fmt(row.crit)}</td>
                 <td className={'p-1 text-right ' + (metric === 'never' ? 'font-bold text-white' : 'text-white/55')}>{fmt(row.never)}</td>
@@ -879,7 +892,7 @@ function Results({
 
 /** The panel quantity each symbol stands for, as a stat key that HAS a glyph. */
 const SYMBOL_STAT = {
-  A: 'atk', U: 'anemoDmg', P: 'pyroDmg', C: 'critDmg', R: 'critRate',
+  A: 'atk', U: 'anemoDmg', P: 'pyroDmg', C: 'critDmg', R: 'critRate', E: 'em',
 };
 
 /**
@@ -890,13 +903,13 @@ const SYMBOL_STAT = {
  * those columns are constant during a search, and every term built only from them
  * is the same number for every candidate. That is the difference the colour marks.
  */
-const MOVABLE = new Set(['A', 'C', 'R']);
+const BASE_MOVABLE = new Set(['A', 'C', 'R']);
 
 const fmtCoef = (x) => Number(Number(x).toPrecision(6)).toLocaleString('en-US');
 
 /** One panel quantity: its glyph, its name, and whether the search can move it. */
-function Var({ sym, L, size = 12 }) {
-  const movable = MOVABLE.has(sym);
+function Var({ sym, L, size = 12, movableSet = BASE_MOVABLE }) {
+  const movable = movableSet.has(sym);
   return (
     <span className={'inline-flex items-center gap-1 ' + (movable ? 'text-[#7fd4c1]' : 'text-white/35')}>
       {SYMBOL_STAT[sym]
@@ -908,9 +921,9 @@ function Var({ sym, L, size = 12 }) {
 }
 
 /** One monomial: its factors as chips, then the coefficient the program was handed. */
-function TermRow({ mono, value, L }) {
+function TermRow({ mono, value, L, movableSet = BASE_MOVABLE }) {
   const factors = monoFactors(mono);
-  const hot = factors.some((s) => MOVABLE.has(s));
+  const hot = factors.some((s) => movableSet.has(s));
   return (
     <div className="flex items-baseline gap-2 py-[1px] tabular-nums">
       <span className="text-[10px] leading-none text-white/20">+</span>
@@ -920,7 +933,7 @@ function TermRow({ mono, value, L }) {
           : factors.map((s, k) => (
             <span key={s} className="inline-flex items-center gap-1">
               {k > 0 && <span className="text-[10px] text-white/25">x</span>}
-              <Var sym={s} L={L} />
+              <Var sym={s} L={L} movableSet={movableSet} />
             </span>
           ))}
       </span>
@@ -932,7 +945,9 @@ function TermRow({ mono, value, L }) {
 }
 
 /** 0 when the term can change with the allocation, 1 when it cannot. */
-const movedFirst = (mono) => (monoFactors(mono).some((s) => MOVABLE.has(s)) ? 0 : 1);
+const movedFirst = (mono, movableSet) => (
+  monoFactors(mono).some((s) => movableSet.has(s)) ? 0 : 1
+);
 
 /** The degrees a monomial can have, in the order the polynomial grows. */
 const DEGREES = [
@@ -943,7 +958,7 @@ const DEGREES = [
 ];
 
 /** A coefficient map as a card: terms grouped by degree, in the program's order. */
-function CoeffList({ title, sub, coeffs, L, accent }) {
+function CoeffList({ title, sub, coeffs, L, accent, movableSet = BASE_MOVABLE }) {
   const rows = MONO_ORDER.filter((m) => Number(coeffs?.[m]) || 0);
   return (
     <div className="rounded-lg border border-white/[0.06] bg-white/[0.015] p-2">
@@ -956,12 +971,14 @@ function CoeffList({ title, sub, coeffs, L, accent }) {
         // the only ones that can differ between two allocations, so they lead.
         const group = rows
           .filter((m) => monoFactors(m).length === n)
-          .sort((a, b) => movedFirst(a) - movedFirst(b));
+          .sort((a, b) => movedFirst(a, movableSet) - movedFirst(b, movableSet));
         if (!group.length) return null;
         return (
           <div key={n} className="mb-1 last:mb-0">
             <p className="text-[9px] tracking-wide text-white/25">{L(label)}</p>
-            {group.map((m) => <TermRow key={m} mono={m} value={coeffs[m]} L={L} />)}
+            {group.map((m) => (
+              <TermRow key={m} mono={m} value={coeffs[m]} L={L} movableSet={movableSet} />
+            ))}
           </div>
         );
       })}
@@ -972,18 +989,25 @@ function CoeffList({ title, sub, coeffs, L, accent }) {
 function Expression({ expr, basePanel, curPanel, L }) {
   const never = expr.coeffs.never || {};
   const crit = expr.coeffs.crit || {};
+  const ampNever = expr.coeffs.ampNever || [];
+  const ampCrit = expr.coeffs.ampCrit || [];
+  const movableSet = new Set([...BASE_MOVABLE, ...(expr.hasAmp ? ['E'] : [])]);
   // The panel's own variables AT THE WORN BUILD, so the master formula can be
   // shown as ARITHMETIC and not just as symbols: the weights and the per-group
   // contributions are what turn the abstract Sigma into something checkable.
   const cv = curPanel ? variablesOf(curPanel) : null;
   const R = cv ? cv.R : 0;
-  const neverVal = cv ? evaluate(never, cv) : null;
+  const at = cv ? damageAt(expr, cv) : null;
+  const neverVal = at?.never ?? null;
+  const critVal = at?.crit ?? null;
   const groupVals = expr.coeffs.avgGroups.map((g) => {
     const mu = Math.min(R + g.crBuff, 100) / 100;
-    const df = cv ? evaluate(g.delta, cv) : null;
+    const baseDelta = cv ? evaluate(g.delta, cv) : null;
+    const ampDelta = cv ? evaluateAmp(g.amp, cv) : null;
+    const df = cv ? baseDelta + ampDelta : null;
     return { ...g, mu, df, contrib: cv ? mu * df : null };
   });
-  const avgVal = cv ? neverVal + groupVals.reduce((t, g) => t + g.contrib, 0) : null;
+  const avgVal = at?.avg ?? null;
   return (
     <details open className="mt-3 rounded-xl border border-white/[0.07] bg-white/[0.02] p-3">
       <summary className="cursor-pointer text-[11px] font-bold text-white/80">
@@ -998,7 +1022,9 @@ function Expression({ expr, basePanel, curPanel, L }) {
 
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-white/[0.06] bg-white/[0.015] px-2 py-1.5">
         <span className="text-[9px] text-white/30">{L({ chs: '面板变量', en: 'panel' })}</span>
-        {['A', 'U', 'P', 'G', 'C', 'R'].map((s) => <Var key={s} sym={s} L={L} size={13} />)}
+        {['A', 'U', 'P', 'G', 'C', 'R', ...(expr.hasAmp ? ['E'] : [])].map((s) => (
+          <Var key={s} sym={s} L={L} size={13} movableSet={movableSet} />
+        ))}
         <span className="ml-auto text-[9px] text-white/30">
           {L({
             chs: 'A = 基础攻击 x (1 + 攻击力% / 100) + 固定攻击',
@@ -1009,8 +1035,12 @@ function Expression({ expr, basePanel, curPanel, L }) {
       <p className="mt-1.5 text-[10px] leading-relaxed text-white/45">
         <span className="text-[#7fd4c1]">■</span>{' '}
         {L({
-          chs: '亮色的会被副词条推动（攻击力%、暴击率、暴伤）；风伤 / 火伤 / 增伤不在副词条池里，本次搜索中是常数——只由它们组成的项对所有候选都一样，不决定谁更优。',
-          en: 'Teal quantities are what a substat roll moves (ATK%, CRIT Rate, CRIT DMG). Anemo / Pyro / generic DMG bonus is not in the substat pool, so it is constant here and a term built only from those is the same for every candidate.',
+          chs: '亮色的会被副词条推动（攻击力%、暴击率、暴伤'
+            + (expr.hasAmp ? '、元素精通' : '')
+            + '）；风伤 / 火伤 / 增伤不在副词条池里，本次搜索中是常数——只由它们组成的项对所有候选都一样，不决定谁更优。',
+          en: 'Teal quantities are what a substat roll moves (ATK%, CRIT Rate, CRIT DMG'
+            + (expr.hasAmp ? ', EM' : '')
+            + '). Anemo / Pyro / generic DMG bonus is not in the substat pool, so it is constant here and a term built only from those is the same for every candidate.',
         })}
       </p>
 
@@ -1041,6 +1071,14 @@ function Expression({ expr, basePanel, curPanel, L }) {
         <p className="mt-1 text-[13px] font-bold tabular-nums text-[#7fd4c1]">
           {'f_avg = f_never + Σ min(R + ΔR, 100) / 100 x Δf'}
         </p>
+        {expr.hasAmp && (
+          <p className="mt-1 rounded border border-[#7fd4c1]/15 bg-[#7fd4c1]/[0.05] px-2 py-1 text-[9px] leading-relaxed text-white/55">
+            {L({
+              chs: '蒸发 / 融化项：反应系数随精通变化，单项写为 em(E + B) x (多项式)，其中 em = 1 + 2.78(E + B) / (E + B + 1400)。B 是该行自带的精通增益。上面的 f_never、f_crit、Δf 已经包含这部分。',
+              en: 'Vaporize / Melt terms: the reaction factor varies with EM, so a term is em(E + B) x polynomial, where em = 1 + 2.78(E + B) / (E + B + 1400) and B is the row\'s own EM buff. f_never, f_crit and Δf above already include it.',
+            })}
+          </p>
+        )}
         <ul className="mt-1.5 grid grid-cols-1 gap-y-0.5 text-[9px] leading-snug text-white/50 sm:grid-cols-2 sm:gap-x-4">
           <li>
             <span className="font-semibold text-white/70">{'f_never'}</span>
@@ -1085,14 +1123,48 @@ function Expression({ expr, basePanel, curPanel, L }) {
         <CoeffList
           title={L({ chs: '子项 f_never（不暴击）', en: 'part f_never (never crits)' })}
           sub={L({ chs: '总式第一项：暴击因子 = 1', en: 'first term: crit factor = 1' })}
-          coeffs={never} L={L}
+          coeffs={never} L={L} movableSet={movableSet}
         />
         <CoeffList
           title={L({ chs: '子项 f_crit（必定暴击）', en: 'part f_crit (always crits)' })}
-          sub={L({ chs: 'Δf 的参照：暴击因子 = 1 + 暴伤 / 100', en: 'the Δf reference: crit factor = 1 + CRIT DMG / 100' })}
-          coeffs={crit} L={L}
+          sub={L({ chs: 'Δf 的参照：暴击因子 = 1 + 暴伤 / 100', en: 'the Δf reference: crit factor = 1 + CRIT DMG / 100' })
+            + (critVal != null ? ' · ' + fmtCoef(critVal) : '')}
+          coeffs={crit} L={L} movableSet={movableSet}
         />
       </div>
+
+      {expr.hasAmp && (
+        <div className="mt-2 grid grid-cols-2 gap-3">
+          <div>
+            <p className="mb-1 text-[10px] font-bold text-white/70">
+              {L({ chs: '反应子项：不暴击', en: 'Reaction part: never crits' })}
+            </p>
+            {ampNever.map((g) => (
+              <div key={'n' + g.emBuff} className="mb-1">
+                <CoeffList
+                  title={'em(E + ' + g.emBuff + ') x P_never'}
+                  sub={L({ chs: '行上精通增益 B = ' + g.emBuff, en: 'row EM buff B = ' + g.emBuff })}
+                  coeffs={g.coeffs} L={L} movableSet={movableSet}
+                />
+              </div>
+            ))}
+          </div>
+          <div>
+            <p className="mb-1 text-[10px] font-bold text-white/70">
+              {L({ chs: '反应子项：必定暴击', en: 'Reaction part: always crits' })}
+            </p>
+            {ampCrit.map((g) => (
+              <div key={'c' + g.emBuff} className="mb-1">
+                <CoeffList
+                  title={'em(E + ' + g.emBuff + ') x P_crit'}
+                  sub={L({ chs: '行上精通增益 B = ' + g.emBuff, en: 'row EM buff B = ' + g.emBuff })}
+                  coeffs={g.coeffs} L={L} movableSet={movableSet}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="mt-2 border-t border-white/[0.06] pt-2">
         <p className="text-[10px] leading-relaxed text-white/50">
@@ -1120,7 +1192,19 @@ function Expression({ expr, basePanel, curPanel, L }) {
               </span>
             </summary>
             <div className="mt-1">
-              <CoeffList title={'Δf'} sub={'ΔR = +' + g.crBuff + '%'} coeffs={g.delta} L={L} />
+              <CoeffList
+                title={'Δf'} sub={'ΔR = +' + g.crBuff + '%'} coeffs={g.delta}
+                L={L} movableSet={movableSet}
+              />
+              {g.amp?.map((a) => (
+                <div key={'a' + a.emBuff} className="mt-1 rounded-lg border border-white/[0.05] p-2">
+                  <CoeffList
+                    title={'em(E + ' + a.emBuff + ') x ΔP'}
+                    sub={L({ chs: 'ΔR = +' + g.crBuff + '%，行上精通增益 B = ' + a.emBuff, en: 'ΔR = +' + g.crBuff + '%, row EM buff B = ' + a.emBuff })}
+                    coeffs={a.coeffs} L={L} movableSet={movableSet}
+                  />
+                </div>
+              ))}
             </div>
           </details>
         ))}

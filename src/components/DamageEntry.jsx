@@ -19,11 +19,11 @@ import DamageCard, { defaultStats, reactionByKey } from '../DamageCard';
 import BuffCard, { buffKeyOf } from './BuffCard';
 import { useI18n } from '../i18n';
 import { elementOf } from '../game';
-import { buildSources, CHAR_FILE, FLAT_SOURCE_PREFIX } from '../char-sources';
+import { buildSources, FLAT_SOURCE_PREFIX } from '../char-sources';
 import { useTalentDamage } from '../lib/use-talent-damage'
 import { useFitScale } from '../lib/use-fit-scale';
 import { computeDamage } from '../lib/damage';
-import { useCatalogue } from '../lib/catalogue';
+import { useCatalogue, loadCharacterDetail } from '../lib/catalogue';
 import { derivePanel } from '../lib/stat-derive';
 import { repairOverrides } from '../lib/axes-store';
 import {
@@ -535,10 +535,13 @@ function DamageEntry({
       return;
     }
     let alive = true;
-    fetch(CHAR_FILE(entry.charId, lang))
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j) => alive && setCharData(j))
-      .catch(() => alive && setCharData(null));
+    // A loop can render a dozen rows of the SAME character. `loadCharacterDetail`
+    // shares one in-flight/settled request, so the rows do not each fetch the same
+    // ~80 KB file; resetting first prevents the previous character's icons from
+    // showing while the next file is in flight.
+    setCharData(null);
+    loadCharacterDetail(entry.charId, lang)
+      .then((j) => { if (alive) setCharData(j); });
     return () => { alive = false; };
   }, [entry.charId, lang]);
 

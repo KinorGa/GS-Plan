@@ -111,11 +111,24 @@ export function get(list, id) {
 export function update(list, id, fn) {
   const at = locate(list, id);
   if (!at) return list;
-  if (!at.parent) return list.map((row, i) => (i === at.topIndex ? fn(row) : row));
+  if (!at.parent) {
+    const next = fn(at.top);
+    // A no-op update must stay a no-op. `setEntrySummary` deliberately returns the
+    // entry it was given when its report has not changed; mapping anyway would
+    // still manufacture a new list, re-render the axis and make the card report
+    // again -- a report -> write -> render loop. The debounced save was the first
+    // visible casualty: every report reset its 400 ms timer, so a note written on
+    // a child or loop member was never persisted while that card stayed open.
+    if (next === at.top) return list;
+    return list.map((row, i) => (i === at.topIndex ? next : row));
+  }
+  const current = rows(at.parent)[at.index];
+  const next = fn(current);
+  if (next === current) return list;
   return list.map((row, i) => {
     if (i !== at.topIndex) return row;
     const kids = rows(row);
-    return { ...row, children: kids.map((c, k) => (k === at.index ? fn(c) : c)) };
+    return { ...row, children: kids.map((c, k) => (k === at.index ? next : c)) };
   });
 }
 

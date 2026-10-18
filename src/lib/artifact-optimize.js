@@ -53,10 +53,11 @@ export const MAX_ROLLS_PER_LINE = 6;
 /**
  * The substats whose rolls move the damage panel AT ALL.
  *
- * 'damage.js' reads total ATK, CRIT Rate and CRIT DMG and nothing else, so a roll
- * of HP, DEF, EM or Energy Recharge spends a line and changes no number. They are
- * still selectable -- a piece HAS four lines and the junk ones have to be named --
- * but the default search only lets these four be "must".
+ * 'damage.js' reads total ATK, CRIT Rate and CRIT DMG, plus EM when an amplifying
+ * reaction is present. HP, DEF and Energy Recharge spend a line and change no
+ * number, and so does EM on a non-reaction axis. They are still selectable -- a
+ * piece HAS four lines and the junk ones have to be named -- but the default search
+ * only treats these four as damage-producing.
  */
 export const FEEDING_SUBSTATS = ['atkPct', 'atk', 'critRate', 'critDmg'];
 
@@ -84,6 +85,7 @@ export const SYMBOL_LABEL = {
   G: { chs: '增伤', en: 'DMG Bonus' },
   C: { chs: '暴伤', en: 'CRIT DMG' },
   R: { chs: '暴击率', en: 'CRIT Rate' },
+  E: { chs: '元素精通', en: 'Elemental Mastery' },
 };
 
 /** 'A*U*C' -> its factors, so a caller can render names instead of symbols. */
@@ -130,7 +132,9 @@ export function stripSubstats(build) {
 const num = (x) => String(Number(x) || 0);
 
 /** Which panel field a substat feeds. Anything absent spends a roll and does nothing. */
-const FEED_FIELD = { atkPct: 'atkPct', atk: 'flatAtk', critRate: 'critRate', critDmg: 'critDmg' };
+const FEED_FIELD = {
+  atkPct: 'atkPct', atk: 'flatAtk', critRate: 'critRate', critDmg: 'critDmg', em: 'em',
+};
 
 /**
  * Roughly how many TOP-TIER rolls the CURRENT build's substats are worth.
@@ -232,7 +236,7 @@ export function importPieces(build, { upgrades = UPGRADES_DEFAULT } = {}) {
  * @param {object}   o
  * @param {object}   o.expr        From 'mergedExpression'.
  * @param {object}   o.panel       The BASELINE panel (no substats).
- * @param {object}   [o.ref]       '{ A, C, R }' of the CURRENT build, emitted last.
+ * @param {object}   [o.ref]       '{ A, C, R, E }' of the CURRENT build, emitted last.
  * @param {object[]} o.pieces      'pieceSpec' results, one per slot.
  * @param {number}   [o.hitScale]
  */
@@ -243,7 +247,7 @@ export function buildProblem({ expr, panel, ref, pieces, hitScale = DEFAULT_HIT_
   rows.push('# artifact-optimize problem: generated, not hand-written');
   put('panel', num(panel.atk), num(panel.atkPct), num(panel.flatAtk),
     num(panel.critRate), num(panel.critDmg),
-    num(panel.anemoDmg), num(panel.pyroDmg), num(panel.dmgBonus));
+    num(panel.anemoDmg), num(panel.pyroDmg), num(panel.dmgBonus), num(panel.em));
 
   // Every substat is declared, whether or not any piece may use it, so the CSV's
   // columns are the same shape for every run and read back by NAME.
@@ -266,8 +270,17 @@ export function buildProblem({ expr, panel, ref, pieces, hitScale = DEFAULT_HIT_
   put('coeff', 'crit', ...coeffVector(expr.coeffs.crit).map(num));
   for (const g of expr.coeffs.avgGroups) {
     put('group', num(g.crBuff), ...coeffVector(g.delta).map(num));
+    for (const a of g.amp || []) {
+      put('amp', 'group', num(g.crBuff), num(a.emBuff), ...coeffVector(a.coeffs).map(num));
+    }
   }
-  if (ref) put('ref', num(ref.A), num(ref.C), num(ref.R));
+  for (const a of expr.coeffs.ampNever || []) {
+    put('amp', 'never', num(a.emBuff), ...coeffVector(a.coeffs).map(num));
+  }
+  for (const a of expr.coeffs.ampCrit || []) {
+    put('amp', 'crit', num(a.emBuff), ...coeffVector(a.coeffs).map(num));
+  }
+  if (ref) put('ref', num(ref.A), num(ref.C), num(ref.R), num(ref.E));
 
   return rows.join('\n') + '\n';
 }
@@ -284,13 +297,20 @@ export function parseResult(text) {
   if (!lines.length) return { stats: [], rows: [] };
 
   const head = lines[0].split(',').map((s) => s.trim());
-  const aAt = head.indexOf('A');
-  const totalAt = head.indexOf('total');
+  const at = (name) => head.indexOf(name);
+  const aAt = at('A');
+  const totalAt = at('total');
   if (aAt < 1) throw new Error('unexpected optimiser header: ' + lines[0]);
+  const panelAt = ['A', 'C', 'R', 'E'].reduce((min, name) => {
+    const i = at(name);
+    return i >= 0 && (min < 0 || i < min) ? i : min;
+  }, -1);
   // 'total' is a roll-count column but NOT a substat, so the stat list stops before
   // whichever of the two comes first. Reading it as a stat would put a phantom
   // column in the table and mis-name every count after it.
-  const stats = head.slice(0, totalAt >= 0 ? totalAt : aAt);
+  const stats = head.slice(0, totalAt >= 0 && panelAt >= 0
+    ? Math.min(totalAt, panelAt)
+    : totalAt >= 0 ? totalAt : panelAt >= 0 ? panelAt : aAt);
 
   const rows = [];
   for (let i = 1; i < lines.length; i += 1) {
@@ -307,12 +327,13 @@ export function parseResult(text) {
       hasHits,
       total: totalAt >= 0 ? Number(c[totalAt]) || 0 : stats.reduce((s, k) => s + hits[k], 0),
       A: Number(c[aAt]) || 0,
-      C: Number(c[aAt + 1]) || 0,
-      R: Number(c[aAt + 2]) || 0,
-      never: Number(c[aAt + 3]) || 0,
-      crit: Number(c[aAt + 4]) || 0,
-      avg: Number(c[aAt + 5]) || 0,
-      isCurrent: c[aAt + 6] === '1',
+      C: Number(c[at('C')]) || 0,
+      R: Number(c[at('R')]) || 0,
+      E: Number(c[at('E')]) || 0,
+      never: Number(c[at('dmg_never')]) || 0,
+      crit: Number(c[at('dmg_crit')]) || 0,
+      avg: Number(c[at('dmg_avg')]) || 0,
+      isCurrent: c[at('is_current')] === '1',
     });
   }
   return { stats, rows };

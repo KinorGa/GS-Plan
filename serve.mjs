@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { chatCompletionsUrl, DEFAULT_KEY_ENV } from './src/lib/vision-client.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.join(HERE, 'dist');
+const ROOT = path.resolve(HERE, 'dist');
 const PORT = Number(process.env.PORT || 5199);
 
 /**
@@ -250,7 +250,7 @@ function runOptimizer(problem) {
     // Wall clock from spawn to close: the SEARCH's own cost, without the HTTP hop
     // or the browser parsing the CSV. Reported back so the dialog can show it.
     const started = process.hrtime.bigint();
-    const child = spawn(OPTIMIZE_EXE, [file, '--threads', String(Math.max(1, os.cpus().length))]);
+    const child = spawn(OPTIMIZE_EXE, [file]);
     let out = '';
     let err = '';
     // A runaway search must not hold the request open forever; the result so far
@@ -457,19 +457,22 @@ http
     }
 
     // The app uses hash routing, but fall back to index.html for safety.
-    let full = path.join(ROOT, urlPath);
+    // Resolve the request INSIDE the root before touching the filesystem. A
+    // prefix check on the joined string rejects its own valid children on a
+    // case-insensitive drive and is no defence against `..`; comparing relative
+    // paths is the containment test.
+    let full = path.resolve(ROOT, '.' + urlPath);
+    const rel = path.relative(ROOT, full);
+    if (rel.startsWith('..') || path.isAbsolute(rel)) {
+      res.writeHead(403).end('forbidden');
+      return;
+    }
     try {
       if (!fs.existsSync(full) || fs.statSync(full).isDirectory()) {
         full = path.join(ROOT, 'index.html');
       }
     } catch {
       full = path.join(ROOT, 'index.html');
-    }
-
-    // Prevent escaping the served root.
-    if (!full.startsWith(ROOT)) {
-      res.writeHead(403).end('forbidden');
-      return;
     }
 
     res.writeHead(200, {
