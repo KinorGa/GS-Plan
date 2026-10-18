@@ -1038,6 +1038,20 @@ function Page() {
   const clearAll = () => updateEntries(() => []);
 
   /**
+   * A long rotation can be hundreds of rows tall. The axis toolbar is where a
+   * reader decides to inspect the footer, so the jump belongs there rather than
+   * as a floating control that covers a row.
+   *
+   * Scroll the document's own scrolling root: the page itself owns the scrollbar,
+   * while the buff pool's internal column is sticky and would otherwise be the
+   * only element a selector such as `scrollIntoView` could accidentally pick.
+   */
+  const scrollToAxisBottom = useCallback(() => {
+    const root = document.scrollingElement || document.documentElement;
+    root.scrollTo({ top: root.scrollHeight, behavior: 'smooth' });
+  }, []);
+
+  /**
    * THE BULK SETTINGS, and the ONE snapshot that makes them reversible.
    *
    * `bulkUndo` holds the list as it was just before the last apply -- a single
@@ -1666,6 +1680,13 @@ function Page() {
               </div>
 
               <div className="flex shrink-0 gap-2">
+                {entries.length > 0 && (
+                  <button onClick={scrollToAxisBottom} data-scroll-axis-bottom
+                          title={L({ chs: '跳到伤害轴末尾（含统计区）', en: 'Jump to the end of the damage axis (including summary)' })}
+                          className="rounded-lg border border-white/10 px-2.5 py-1 text-[11px] text-white/40 transition-colors hover:border-white/25 hover:text-white/70">
+                    ↓ {L({ chs: '到底部', en: 'Bottom' })}
+                  </button>
+                )}
                 {bulkUndo && (
                   <button onClick={revertBulk} data-bulk-revert
                           title={L({ chs: '恢复统一设置前的数值', en: 'Undo the last bulk apply' })}
