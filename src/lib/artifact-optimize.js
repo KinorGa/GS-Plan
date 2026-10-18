@@ -90,7 +90,8 @@ export function scalingBasesOf(expr) {
 }
 
 /** Whether Elemental Mastery itself enters the damage (scaling or reaction). */
-export const emMattersIn = (expr) => !!expr?.hasAmp || scalingBasesOf(expr).includes('em');
+export const emMattersIn = (expr) =>
+  !!expr?.hasAmp || !!expr?.hasTransformative || scalingBasesOf(expr).includes('em');
 
 /**
  * The substats that can move THIS expression's damage.
@@ -334,14 +335,22 @@ export function buildProblem({ expr, panel, ref, pieces, hitScale = DEFAULT_HIT_
   for (const g of expr.coeffs.avgGroups) {
     put('group', num(g.crBuff), ...coeffVector(g.delta).map(num));
     for (const a of g.amp || []) {
-      put('amp', 'group', num(g.crBuff), num(a.emBuff), ...coeffVector(a.coeffs).map(num));
+      put('amp', 'group', num(g.crBuff), num(a.emBuff), num(a.bonus),
+        ...coeffVector(a.coeffs).map(num));
     }
   }
   for (const a of expr.coeffs.ampNever || []) {
-    put('amp', 'never', num(a.emBuff), ...coeffVector(a.coeffs).map(num));
+    put('amp', 'never', num(a.emBuff), num(a.bonus), ...coeffVector(a.coeffs).map(num));
   }
   for (const a of expr.coeffs.ampCrit || []) {
-    put('amp', 'crit', num(a.emBuff), ...coeffVector(a.coeffs).map(num));
+    put('amp', 'crit', num(a.emBuff), num(a.bonus), ...coeffVector(a.coeffs).map(num));
+  }
+  // Transformative reaction damage: constant + emWeight * 16(E+B)/(E+B+2000).
+  // It has no polynomial and does not crit, so one record serves all three crit
+  // conventions.
+  // REF: docs/REACTIONS.md#transformative
+  for (const g of expr.coeffs.transformative || []) {
+    put('rx', num(g.emBuff), num(g.constant), num(g.em));
   }
   if (ref) {
     put('ref', num(ref.A), num(ref.H), num(ref.D), num(ref.M),

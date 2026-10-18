@@ -138,15 +138,18 @@ const REACTIONS = [
   { key: 'melt_rev', chs: '融化', en: 'Melt', base: 1.5, amp: true, from: 'cryo', to: 'pyro', note: { chs: '冰→火 ×1.5', en: 'Cryo to Pyro x1.5' } },
 
   // --- transformative (no direction) ---
-  { key: 'superconduct', chs: '超导', en: 'Superconduct', base: 1, amp: false, transformative: true, pair: ['cryo', 'electro'] },
-  { key: 'swirl', chs: '扩散', en: 'Swirl', base: 1, amp: false, transformative: true, pair: ['anemo', 'pyro'] },
-  { key: 'electrocharged', chs: '感电', en: 'Electro-Charged', base: 1, amp: false, transformative: true, pair: ['hydro', 'electro'] },
-  { key: 'frozen', chs: '冻结', en: 'Frozen', base: 1, amp: false, transformative: true, pair: ['cryo', 'hydro'] },
-  { key: 'overloaded', chs: '超载', en: 'Overloaded', base: 1, amp: false, transformative: true, pair: ['pyro', 'electro'] },
-  { key: 'burning', chs: '燃烧', en: 'Burning', base: 1, amp: false, transformative: true, pair: ['pyro', 'dendro'] },
-  { key: 'quicken', chs: '原激化', en: 'Quicken', base: 1, amp: false, transformative: true, pair: ['dendro', 'electro'] },
-  { key: 'bloom', chs: '绽放', en: 'Bloom', base: 1, amp: false, transformative: true, pair: ['dendro', 'hydro'] },
-  { key: 'crystallize', chs: '结晶', en: 'Crystallize', base: 1, amp: false, transformative: true, pair: ['geo', 'pyro'] },
+  // `coefficient` is the game's reaction coefficient; `damageElement` is the
+  // type the reaction itself deals, which is not always the triggering element.
+  // REF: docs/REACTIONS.md#transformative
+  { key: 'superconduct', chs: '超导', en: 'Superconduct', base: 1, amp: false, transformative: true, coefficient: 0.5, damageElement: 'Cryo', pair: ['cryo', 'electro'], note: { chs: '剧变 · 系数 0.5 · 防御区 ×1', en: 'Transformative · 0.5 · DEF ×1' } },
+  { key: 'swirl', chs: '扩散', en: 'Swirl', base: 1, amp: false, transformative: true, coefficient: 0.6, pair: ['anemo', 'pyro'], note: { chs: '剧变 · 系数 0.6 · 当前按火扩散结算', en: 'Transformative · 0.6 · Pyro swirl assumed' } },
+  { key: 'electrocharged', chs: '感电', en: 'Electro-Charged', base: 1, amp: false, transformative: true, coefficient: 1.2, damageElement: 'Electro', pair: ['hydro', 'electro'], note: { chs: '剧变 · 系数 1.2 · 防御区 ×1', en: 'Transformative · 1.2 · DEF ×1' } },
+  { key: 'frozen', chs: '冻结', en: 'Frozen', base: 1, amp: false, transformative: true, pair: ['cryo', 'hydro'], note: { chs: '冻结 · 无直接反应伤害', en: 'Frozen · no direct reaction DMG' } },
+  { key: 'overloaded', chs: '超载', en: 'Overloaded', base: 1, amp: false, transformative: true, coefficient: 2.0, damageElement: 'Pyro', pair: ['pyro', 'electro'], note: { chs: '剧变 · 系数 2.0 · 防御区 ×1', en: 'Transformative · 2.0 · DEF ×1' } },
+  { key: 'burning', chs: '燃烧', en: 'Burning', base: 1, amp: false, transformative: true, coefficient: 0.25, damageElement: 'Pyro', pair: ['pyro', 'dendro'], note: { chs: '剧变 · 系数 0.25 · 防御区 ×1', en: 'Transformative · 0.25 · DEF ×1' } },
+  { key: 'quicken', chs: '原激化', en: 'Quicken', base: 1, amp: false, transformative: true, pair: ['dendro', 'electro'], note: { chs: '原激化 · 无直接反应伤害', en: 'Quicken · no direct reaction DMG' } },
+  { key: 'bloom', chs: '绽放', en: 'Bloom', base: 1, amp: false, transformative: true, coefficient: 2.0, damageElement: 'Dendro', pair: ['dendro', 'hydro'], note: { chs: '剧变 · 系数 2.0 · 防御区 ×1', en: 'Transformative · 2.0 · DEF ×1' } },
+  { key: 'crystallize', chs: '结晶', en: 'Crystallize', base: 1, amp: false, transformative: true, pair: ['geo', 'pyro'], note: { chs: '结晶 · 无直接反应伤害', en: 'Crystallize · no direct reaction DMG' } },
 ];
 
 /**
@@ -1204,8 +1207,12 @@ export default function DamageCard({
           <Mini stat="talent" label={L({ chs: '天赋倍率', en: 'Talent' })} value={`${fmt(result.talent * 100)}%`} />
           <Mini
             stat="reaction"
-            label={L({ chs: '反应增幅', en: 'Reaction' })}
-            value={reaction.amp ? `x${fmt(result.reactMult)}` : '—'}
+            label={reaction.amp
+              ? L({ chs: '反应增幅', en: 'Reaction' })
+              : L({ chs: '反应附加', en: 'Reaction add-on' })}
+            value={reaction.amp
+              ? `x${fmt(result.reactMult)}`
+              : result.reactionPerHit > 0 ? `+${fmt(result.reactionPerHit)}` : '—'}
           />
           <Mini stat="crit" label={L({ chs: '暴伤区', en: 'Crit DMG Zone' })} value={`x${fmt(result.critMult)}`} />
           <Mini stat="dmgBonus" label={L({ chs: '伤害加成', en: 'DMG Bonus' })} value={`${fmt(result.bonusPct)}%`} />
@@ -1260,7 +1267,7 @@ export default function DamageCard({
                 {reaction.note
                   ? L(reaction.note)
                   : reaction.transformative
-                  ? L({ chs: '剧变反应，不参与增幅', en: 'transformative, no amplification' })
+                  ? L({ chs: '剧变反应 · 防御区 ×1', en: 'transformative · DEF ×1' })
                   : L({ chs: '无反应加成', en: 'no reaction bonus' })}
               </span>
             </span>
@@ -1351,7 +1358,9 @@ export default function DamageCard({
 
         <div className="mt-3 shrink-0 rounded-xl border border-white/10 bg-gradient-to-b from-white/[0.06] to-transparent p-4">
           <p className="text-[10px] uppercase tracking-wider text-white/40">
-            {L({ chs: '单段伤害', en: 'Damage per Hit' })}
+            {reaction.transformative && reaction.coefficient
+              ? L({ chs: '单段伤害（含反应附加）', en: 'Damage per Hit (incl. reaction)' })
+              : L({ chs: '单段伤害', en: 'Damage per Hit' })}
           </p>
           <p data-summary="perHit" className="mt-1 text-3xl font-bold tabular-nums text-white">{n(result.perHit)}</p>
           {effectiveStage.hits > 1 && (

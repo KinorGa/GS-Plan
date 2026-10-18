@@ -1012,7 +1012,7 @@ function Expression({ expr, basePanel, curPanel, L, panelSymbols }) {
   const ampNever = expr.coeffs.ampNever || [];
   const ampCrit = expr.coeffs.ampCrit || [];
   const emMatters = emMattersIn(expr);
-  const movableSet = new Set(['C', 'R', ...panelSymbols, ...(expr.hasAmp ? ['E'] : [])]);
+  const movableSet = new Set(['C', 'R', ...panelSymbols, ...(emMatters ? ['E'] : [])]);
   // The panel's own variables AT THE WORN BUILD, so the master formula can be
   // shown as ARITHMETIC and not just as symbols: the weights and the per-group
   // contributions are what turn the abstract Sigma into something checkable.
@@ -1109,6 +1109,14 @@ function Expression({ expr, basePanel, curPanel, L, panelSymbols }) {
             {L({
               chs: '蒸发 / 融化项：反应系数随精通变化，单项写为 em(E + B) x (多项式)，其中 em = 1 + 2.78(E + B) / (E + B + 1400)。B 是该行自带的精通增益。上面的 f_never、f_crit、Δf 已经包含这部分。',
               en: 'Vaporize / Melt terms: the reaction factor varies with EM, so a term is em(E + B) x polynomial, where em = 1 + 2.78(E + B) / (E + B + 1400) and B is the row\'s own EM buff. f_never, f_crit and Δf above already include it.',
+            })}
+          </p>
+        )}
+        {expr.hasTransformative && (
+          <p className="mt-1 rounded border border-amber-300/15 bg-amber-300/[0.05] px-2 py-1 text-[9px] leading-relaxed text-white/55">
+            {L({
+              chs: '剧变反应项：超载 / 超导 / 扩散 / 感电 / 燃烧 / 绽放的伤害是额外一段，防御区恒为 1，不暴击、不吃增伤。单项写为常数 + 权重 × T(E + B)，其中 T = 16(E + B) / (E + B + 2000)，B 是该行自带的精通增益。',
+              en: 'Transformative reactions: Overloaded / Superconduct / Swirl / Electro-Charged / Burning / Bloom add a separate hit with DEF zone = 1; it cannot crit and ignores DMG bonus. A term is constant + weight x T(E + B), where T = 16(E + B) / (E + B + 2000) and B is the row EM buff.',
             })}
           </p>
         )}

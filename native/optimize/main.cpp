@@ -21,9 +21,10 @@
 //   coeff   never <40 numbers>
 //   coeff   crit  <40 numbers>
 //   group   <critRateBuff> <40 numbers>    # avg = never + sum min(R + buff, 100)/100 * group
-//   amp     never <emBuff> <40 numbers>    # polynomial part of an amplifying reaction
-//   amp     crit  <emBuff> <40 numbers>
-//   amp     group <critRateBuff> <emBuff> <40 numbers>
+//   amp     never <emBuff> <reactionBonus> <40 numbers> # polynomial part of an amplifying reaction
+//   amp     crit  <emBuff> <reactionBonus> <40 numbers>
+//   amp     group <critRateBuff> <emBuff> <reactionBonus> <40 numbers>
+//   rx      <emBuff> <constant> <emWeight> # transformative add-on, all crit modes
 //   ref     <A> <H> <D> <M> <C> <R> <E>    # optional: the CURRENT build, emitted last
 //
 // THE SHAPE OF A PIECE, WHICH IS THE WHOLE POINT
@@ -47,8 +48,8 @@
 // HOW THE SEARCH IS KEPT SMALL
 //   CRIT Rate and CRIT DMG always move the panel. A scaling block contributes only
 //   when its coefficients are non-zero: ATK% + flat ATK for A, HP% + flat HP for H,
-//   DEF% + flat DEF for D, and EM for M or an amplifying reaction. The rest spend a
-//   line and change no number. A piece's contribution is therefore a small-dimensional roll count,
+//   DEF% + flat DEF for D, and EM for M or any reaction. The rest spend a line and
+//   change no number. A piece's contribution is therefore a small-dimensional roll count,
 //   and pieces are combined level by level with a
 //   dedupe on that count -- a state that has been reached is never expanded twice,
 //   and the count of reachable states is in the tens of thousands rather than the
@@ -133,7 +134,11 @@ struct Problem {
 
   std::array<double, MONO> never{};
   std::array<double, MONO> crit{};
-  struct Amp { double emBuff = 0; std::array<double, MONO> coeffs{}; };
+  struct Amp {
+    double emBuff = 0;
+    double reactionBonus = 0;
+    std::array<double, MONO> coeffs{};
+  };
   struct Group {
     double crBuff = 0;
     std::array<double, MONO> delta{};
@@ -142,6 +147,8 @@ struct Problem {
   std::vector<Amp> ampNever;
   std::vector<Amp> ampCrit;
   std::vector<Group> groups;
+  struct Rx { double emBuff = 0, constant = 0, em = 0; };
+  std::vector<Rx> rx;
 
   bool hasRef = false;
   double refA = 0, refH = 0, refD = 0, refM = 0, refC = 0, refR = 0, refE = 0;
@@ -179,14 +186,33 @@ inline double emFactor(double em) {
   return 1.0 + (2.78 * em) / (em + 1400.0);
 }
 
+// REF: docs/REACTIONS.md#transformative
+inline double transformativeEmFactor(double em) {
+  return (16.0 * em) / (em + 2000.0);
+}
+
 inline double evalAmp(const std::vector<Problem::Amp>& groups,
                       double E, double A, double H, double D, double M,
                       double U, double P, double G, double C) {
   double sum = 0;
   for (const auto& g : groups) {
-    sum += emFactor(E + g.emBuff) * evalCoeffs(g.coeffs, A, H, D, M, U, P, G, C);
+    sum += (emFactor(E + g.emBuff) + g.reactionBonus)
+         * evalCoeffs(g.coeffs, A, H, D, M, U, P, G, C);
   }
   return sum;
+}
+
+inline double evalTransformative(const std::vector<Problem::Rx>& groups, double E) {
+  double sum = 0;
+  for (const auto& g : groups) {
+    sum += g.constant + g.em * transformativeEmFactor(E + g.emBuff);
+  }
+  return sum;
+}
+
+bool hasTransformative(const Problem& p) {
+  for (const auto& g : p.rx) if (g.constant != 0 || g.em != 0) return true;
+  return false;
 }
 
 bool hasAmp(const Problem& p) {
@@ -303,13 +329,16 @@ bool readProblem(const char* path, Problem& p, std::string& err) {
       if (!take(is, which)) { err = "amp: expected never|crit|group"; return false; }
       Problem::Amp a{};
       if (which == "never" || which == "crit") {
-        if (!take(is, a.emBuff)) { err = "amp: expected an EM buff"; return false; }
+        if (!take(is, a.emBuff, a.reactionBonus)) {
+          err = "amp: expected an EM buff and reaction bonus";
+          return false;
+        }
         if (!readVector(is, a.coeffs)) { err = "amp: expected 40 numbers"; return false; }
         (which == "never" ? p.ampNever : p.ampCrit).push_back(a);
       } else if (which == "group") {
         double crBuff = 0;
-        if (!take(is, crBuff, a.emBuff)) {
-          err = "amp group: expected crit-rate and EM buffs";
+        if (!take(is, crBuff, a.emBuff, a.reactionBonus)) {
+          err = "amp group: expected crit-rate, EM and reaction bonuses";
           return false;
         }
         if (!readVector(is, a.coeffs)) { err = "amp group: expected 40 numbers"; return false; }
@@ -325,6 +354,13 @@ bool readProblem(const char* path, Problem& p, std::string& err) {
         err = "amp must be never|crit|group";
         return false;
       }
+    } else if (kind == "rx") {
+      Problem::Rx rx{};
+      if (!take(is, rx.emBuff, rx.constant, rx.em)) {
+        err = "rx: expected EM buff, constant and EM weight";
+        return false;
+      }
+      p.rx.push_back(rx);
     } else if (kind == "ref") {
       p.hasRef = true;
       if (!take(is, p.refA, p.refH, p.refD, p.refM, p.refC, p.refR)) {
@@ -519,6 +555,7 @@ int main(int argc, char** argv) {
 
   const int n = (int)p.keys.size();
   const bool amp = hasAmp(p);
+  const bool rx = hasTransformative(p);
   const bool useA = hasScalingBlock(p, 0);
   const bool useH = hasScalingBlock(p, 1);
   const bool useD = hasScalingBlock(p, 2);
@@ -532,7 +569,7 @@ int main(int argc, char** argv) {
     if ((key == "atkPct" || key == "atk") && !useA) p.feed[i] = -1;
     if ((key == "hpPct" || key == "hp") && !useH) p.feed[i] = -1;
     if ((key == "defPct" || key == "def") && !useD) p.feed[i] = -1;
-    if (key == "em" && !amp && !useM) p.feed[i] = -1;
+    if (key == "em" && !amp && !rx && !useM) p.feed[i] = -1;
   }
 
   // THE COMBINE: one level per piece, deduped on the FEEDING ROLL COUNTS.
@@ -594,7 +631,7 @@ int main(int argc, char** argv) {
     const double C = critDmg;
     const double R = critRate;
     const double E = em;
-    if (!seen.insert(keyOf(A, H, D, M, C, R, E, amp || useM)).second) continue;
+    if (!seen.insert(keyOf(A, H, D, M, C, R, E, amp || rx || useM)).second) continue;
 
     Row row;
     row.A = A; row.H = H; row.D = D; row.M = M;
@@ -603,9 +640,11 @@ int main(int argc, char** argv) {
     row.total = 0;
     for (int i = 0; i < n; ++i) row.total += entry.second[i];
     row.never = evalCoeffs(p.never, A, H, D, M, p.anemoDmg, p.pyroDmg, p.dmgBonus, C)
-              + evalAmp(p.ampNever, E, A, H, D, M, p.anemoDmg, p.pyroDmg, p.dmgBonus, C);
+              + evalAmp(p.ampNever, E, A, H, D, M, p.anemoDmg, p.pyroDmg, p.dmgBonus, C)
+              + evalTransformative(p.rx, E);
     row.crit = evalCoeffs(p.crit, A, H, D, M, p.anemoDmg, p.pyroDmg, p.dmgBonus, C)
-             + evalAmp(p.ampCrit, E, A, H, D, M, p.anemoDmg, p.pyroDmg, p.dmgBonus, C);
+             + evalAmp(p.ampCrit, E, A, H, D, M, p.anemoDmg, p.pyroDmg, p.dmgBonus, C)
+             + evalTransformative(p.rx, E);
     row.avg = row.never;
     for (const auto& g : p.groups) {
       const double mu = std::min(R + g.crBuff, 100.0) / 100.0;
@@ -631,11 +670,13 @@ int main(int argc, char** argv) {
     const double never = evalCoeffs(p.never, p.refA, p.refH, p.refD, p.refM,
                                     p.anemoDmg, p.pyroDmg, p.dmgBonus, p.refC)
                        + evalAmp(p.ampNever, p.refE, p.refA, p.refH, p.refD, p.refM,
-                                 p.anemoDmg, p.pyroDmg, p.dmgBonus, p.refC);
+                                 p.anemoDmg, p.pyroDmg, p.dmgBonus, p.refC)
+                       + evalTransformative(p.rx, p.refE);
     const double crit = evalCoeffs(p.crit, p.refA, p.refH, p.refD, p.refM,
                                    p.anemoDmg, p.pyroDmg, p.dmgBonus, p.refC)
                       + evalAmp(p.ampCrit, p.refE, p.refA, p.refH, p.refD, p.refM,
-                                p.anemoDmg, p.pyroDmg, p.dmgBonus, p.refC);
+                                p.anemoDmg, p.pyroDmg, p.dmgBonus, p.refC)
+                      + evalTransformative(p.rx, p.refE);
     double avg = never;
     for (const auto& g : p.groups) {
       const double mu = std::min(p.refR + g.crBuff, 100.0) / 100.0;

@@ -124,10 +124,21 @@ function partsOf(entry, ctx) {
       : 0;
     const amp = !!reaction?.amp;
     const ampBase = amp
-      ? r.defMult * r.resMult * r.zoneMult * (partHits || 1)
-        * reaction.base * (1 + (Number(withBuffs.reactionBonus) || 0) / 100)
+      ? r.defMult * r.resMult * r.zoneMult * (partHits || 1) * reaction.base
       : 0;
+    const ampBonus = amp ? (Number(withBuffs.reactionBonus) || 0) / 100 : 0;
     const emBuff = (Number(withBuffs.em) || 0) - (Number(panel.em) || 0);
+    // Transformative reaction damage is a separate additional hit: it has no
+    // scaling polynomial, no CRIT, no DMG bonus and no DEF zone. It is constant
+    // plus a rational EM term, so it gets its own group rather than being folded
+    // into the polynomial.
+    // REF: docs/REACTIONS.md#transformative
+    const reactionBonusPct = Number(withBuffs.reactionBonus) || 0;
+    const reactionBaseTotal = r.reactionBaseDamage * (partHits || 1);
+    const rxConst = reactionBaseTotal * (1 + reactionBonusPct / 100);
+    // The group's `em` weight is the base reaction damage; the evaluator
+    // multiplies it by 16(E+B)/(E+B+2000).
+    const rxEm = reactionBaseTotal;
     return {
       element: usedElement,
       t: r.talent,
@@ -144,6 +155,7 @@ function partsOf(entry, ctx) {
         : r.defMult * r.resMult * r.reactMult * r.zoneMult * (partHits || 1),
       amp,
       ampBase,
+      ampBonus,
       emBuff,
       // The row's OWN buff only -- `withBuffs` is panel + buff, and the panel
       // part is the VARIABLE, so folding it in here would count it twice.
@@ -157,6 +169,8 @@ function partsOf(entry, ctx) {
       generic: withBuffs.dmgBonus - panel.dmgBonus,
       cdBuff: withBuffs.critDmg - panel.critDmg,
       crBuff: withBuffs.critRate - panel.critRate,
+      rxConst,
+      rxEm,
     };
   };
 
@@ -310,29 +324,80 @@ function accumulate(rows, a0BySymbol, qOf, filter, weightOf = (row) => row.rest)
  */
 export const emFactor = (em) => 1 + (2.78 * (Number(em) || 0)) / ((Number(em) || 0) + 1400);
 
+/**
+ * The transformative-reaction EM factor: `16 * EM / (EM + 2000)`.
+ *
+ * REF: docs/REACTIONS.md#transformative
+ * REF: https://github.com/genshinsim/gcsim/blob/main/pkg/core/combat/reaction.go
+ */
+export const transformativeEmFactor = (em) => {
+  const value = Math.max(0, Number(em) || 0);
+  return (16 * value) / (value + 2000);
+};
+
 /** `Σ emFactor(E + row EM buff) * polynomial` for one family of amp terms. */
 export function evaluateAmp(groups, v) {
   if (!groups?.length) return 0;
   const E = Number(v?.E) || 0;
   let sum = 0;
-  for (const g of groups) sum += emFactor(E + (Number(g.emBuff) || 0)) * evaluate(g.coeffs, v);
+  for (const g of groups) {
+    const factor = emFactor(E + (Number(g.emBuff) || 0)) + (Number(g.bonus) || 0);
+    sum += factor * evaluate(g.coeffs, v);
+  }
+  return sum;
+}
+
+/** `Σ [constant + emWeight * transformativeEmFactor(E + row EM buff)]`. */
+export function evaluateTransformative(groups, v) {
+  if (!groups?.length) return 0;
+  const E = Number(v?.E) || 0;
+  let sum = 0;
+  for (const g of groups) {
+    sum += (Number(g.constant) || 0)
+      + (Number(g.em) || 0) * transformativeEmFactor(E + (Number(g.emBuff) || 0));
+  }
   return sum;
 }
 
 /** Rows that share an EM buff can share one `emFactor`; group them by it. */
 function ampGroupsOf(rows, a0BySymbol, qOf, filter) {
-  const keys = [...new Set(rows
-    .filter((r) => r.amp && (!filter || filter(r)))
-    .map((r) => Math.round(r.emBuff * 1e6) / 1e6))]
-    .sort((a, b) => a - b);
-  return keys.map((emBuff) => ({
-    emBuff,
-    coeffs: accumulate(
-      rows, a0BySymbol, qOf,
-      (r) => r.amp && Math.abs(r.emBuff - emBuff) < 1e-6 && (!filter || filter(r)),
-      (r) => r.ampBase,
-    ),
-  }));
+  const groups = new Map();
+  for (const row of rows) {
+    if (!row.amp || (filter && !filter(row))) continue;
+    const emBuff = Math.round((Number(row.emBuff) || 0) * 1e6) / 1e6;
+    const bonus = Math.round((Number(row.ampBonus) || 0) * 1e6) / 1e6;
+    const key = `${emBuff}|${bonus}`;
+    if (!groups.has(key)) groups.set(key, { emBuff, bonus, rows: [] });
+    groups.get(key).rows.push(row);
+  }
+  return [...groups.values()]
+    .sort((a, b) => a.emBuff - b.emBuff || a.bonus - b.bonus)
+    .map((group) => ({
+      emBuff: group.emBuff,
+      bonus: group.bonus,
+      coeffs: accumulate(group.rows, a0BySymbol, qOf, null, (r) => r.ampBase),
+    }));
+}
+
+/**
+ * Transformative reaction groups, one per distinct row-level EM buff.
+ *
+ * The group stores the EM-independent part and the weight of the rational EM
+ * factor. It is deliberately separate from `ampGroupsOf`: amplifying reactions
+ * use `2.78 EM / (EM + 1400)`, transformative reactions use
+ * `16 EM / (EM + 2000)`.
+ */
+function transformativeGroupsOf(rows) {
+  const groups = new Map();
+  for (const row of rows) {
+    if (!row.rxConst && !row.rxEm) continue;
+    const emBuff = Math.round((Number(row.emBuff) || 0) * 1e6) / 1e6;
+    const group = groups.get(emBuff) || { emBuff, constant: 0, em: 0 };
+    group.constant += Number(row.rxConst) || 0;
+    group.em += Number(row.rxEm) || 0;
+    groups.set(emBuff, group);
+  }
+  return [...groups.values()].sort((a, b) => a.emBuff - b.emBuff);
 }
 
 /** Evaluate a coefficient set at one point of the panel. `R` is not used here. */
@@ -380,10 +445,14 @@ export function expected(expr, v) {
 
 /** The never-crit and always-crit halves, including amplifying reactions. */
 export const neverAt = (expr, v) =>
-  evaluate(expr.coeffs.never, v) + evaluateAmp(expr.coeffs.ampNever, v);
+  evaluate(expr.coeffs.never, v)
+  + evaluateAmp(expr.coeffs.ampNever, v)
+  + evaluateTransformative(expr.coeffs.transformative, v);
 
 export const critAt = (expr, v) =>
-  evaluate(expr.coeffs.crit, v) + evaluateAmp(expr.coeffs.ampCrit, v);
+  evaluate(expr.coeffs.crit, v)
+  + evaluateAmp(expr.coeffs.ampCrit, v)
+  + evaluateTransformative(expr.coeffs.transformative, v);
 
 /** `{ never, crit, avg }` at one point of the panel, in one call. */
 export function damageAt(expr, v) {
@@ -437,6 +506,7 @@ export function mergedExpression({
   const crit = accumulate(rows, a0BySymbol, (r) => ({ q1: 1 + r.cdBuff / 100, qC: 1 / 100 }));
   const ampNever = ampGroupsOf(rows, a0BySymbol, () => ({ q1: 1, qC: 0 }));
   const ampCrit = ampGroupsOf(rows, a0BySymbol, (r) => ({ q1: 1 + r.cdBuff / 100, qC: 1 / 100 }));
+  const transformative = transformativeGroupsOf(rows);
 
   // One `delta` group per distinct CRIT-RATE buff, because the clamp makes rows
   // non-fungible: one at `R + 20` stops gaining at `R = 80`, one at `R` at 100.
@@ -479,8 +549,9 @@ export function mergedExpression({
     ),
     base,
     variables: variablesOf(base),
-    coeffs: { never, crit, avgGroups, ampNever, ampCrit },
+    coeffs: { never, crit, avgGroups, ampNever, ampCrit, transformative },
     hasAmp: ampNever.length > 0 || ampCrit.length > 0,
+    hasTransformative: transformative.length > 0,
     warnings,
     // NOT a guarantee of invariance: buff cards are the coefficients' real
     // input, so an optimiser allowed to move SETS must re-merge per combination.

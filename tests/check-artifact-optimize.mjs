@@ -27,7 +27,7 @@ const ok = (n, c, x = '') => { if (c) { pass++; console.log('PASS  ' + n); } els
 
 const {
   buildProblem, parseResult, coeffVector, MONO_ORDER, pieceSpec, importPieces,
-  defaultPieces, stripSubstats,
+  defaultPieces, stripSubstats, emMattersIn,
 } = await import('../src/lib/artifact-optimize.js');
 
 /* -------------------------------------------------------------- 1. translation */
@@ -460,6 +460,52 @@ if (!fs.existsSync(EXE)) {
         'worst rel ' + ampWorstBinary.toExponential(2));
       ok('an EM roll produces a distinct outcome',
         new Set(ampRes.rows.filter((r) => r.hasHits).map((r) => r.E.toFixed(3))).size > 1);
+
+      // Transformative reactions are a SEPARATE additive hit. They must reach
+      // the merged expression, selfCheck and the binary, and EM must be a search
+      // dimension even when no talent scales from it.
+      // REF: docs/REACTIONS.md#transformative
+      const rxRows = forced(entries, { reactionKey: 'overloaded', critMode: 'avg' });
+      const exprRx = mergedExpression({
+        entries: rxRows, team, catalogue, talentDamage, charId,
+      });
+      ok('a transformative reaction produces rx groups',
+        exprRx?.hasTransformative === true && exprRx.coeffs.transformative.length > 0);
+      ok('transformative reaction makes EM a feeding substat',
+        emMattersIn(exprRx) === true);
+      const rxWorst = selfCheck(exprRx, {
+        entries: rxRows, team, catalogue, talentDamage, samples: 3, rng: seeded(),
+      });
+      ok('selfCheck agrees with transformative reactions',
+        Math.max(rxWorst.never, rxWorst.crit, rxWorst.avg) < 1e-9,
+        JSON.stringify(rxWorst));
+
+      const rxPiece = pieceSpec({
+        slotKey: 'flower', mainStat: 'hp', upgrades: 0, lines: 2, maxPerLine: 2,
+        allows: [
+          { key: 'em', state: 1 }, { key: 'critRate', state: 1 },
+          { key: 'critDmg', state: 1 }, { key: 'atkPct', state: 1 },
+        ],
+      });
+      const rxPath = tmp('transformative');
+      fs.writeFileSync(rxPath, buildProblem({
+        expr: exprRx, panel: base, pieces: [rxPiece], hitScale: 1,
+      }));
+      const rxOut = execFileSync(EXE, [rxPath], { encoding: 'utf8', maxBuffer: 1 << 30 });
+      fs.rmSync(rxPath, { force: true });
+      const rxRes = parseResult(rxOut);
+      let rxWorstBinary = 0;
+      for (const row of rxRes.rows.filter((r) => r.hasHits)) {
+        const want = damageAt(exprRx, {
+          A: row.A, H: row.H, D: row.D, M: row.M, C: row.C, R: row.R, E: row.E,
+          U: base.anemoDmg, P: base.pyroDmg, G: base.dmgBonus,
+        });
+        rxWorstBinary = Math.max(rxWorstBinary, rel(row.avg, want.avg));
+      }
+      ok('the binary carries transformative reaction add-ons', rxWorstBinary < 1e-8,
+        'worst rel ' + rxWorstBinary.toExponential(2));
+      ok('an EM roll changes a transformative-reaction outcome',
+        new Set(rxRes.rows.filter((r) => r.hasHits).map((r) => r.E.toFixed(3))).size > 1);
 
       // HP scaling is a SEARCH DIMENSION: HP%/flat HP must reach the native
       // evaluator, and every returned row must still equal the merged expression.

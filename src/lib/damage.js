@@ -29,6 +29,66 @@ export const SCALING_BASES = [
 /** The algebra symbol each scaling source gets in the merged expression. */
 export const SCALING_SYMBOL = { atk: 'A', hp: 'H', def: 'D', em: 'M' };
 
+/*
+ * Transformative-reaction level base.
+ *
+ * REF: docs/REACTIONS.md#transformative
+ * REF: https://github.com/genshinsim/gcsim/blob/main/pkg/core/combat/reaction.dm.go
+ *
+ * Index 0 is level 1, index 89 is level 90. The game (and gcsim) carries values
+ * beyond 90 for newer level caps; this app's character levels stop at 90, so the
+ * table stops there. Keeping the table here rather than approximating it with a
+ * curve is deliberate: transformative damage is level-driven, and a fitted
+ * multiplier would make the displayed number disagree with the game for no gain.
+ */
+export const REACTION_LEVEL_BASE = [
+  17.165606, 18.535048, 19.904854, 21.274902, 22.6454,
+  24.649612, 26.640642, 28.868587, 31.36768, 34.143345,
+  37.201, 40.66, 44.446667, 48.56352, 53.74848,
+  59.081898, 64.420044, 69.72446, 75.12314, 80.58478,
+  86.11203, 91.70374, 97.24463, 102.812645, 108.40956,
+  113.20169, 118.102905, 122.97932, 129.72733, 136.29291,
+  142.67085, 149.02902, 155.41699, 161.8255, 169.10631,
+  176.51808, 184.07274, 191.70952, 199.55692, 207.38205,
+  215.3989, 224.16566, 233.50217, 243.35057, 256.06308,
+  268.5435, 281.52606, 295.01364, 309.0672, 323.6016,
+  336.75754, 350.5303, 364.4827, 378.61917, 398.6004,
+  416.39825, 434.387, 452.95105, 472.60623, 492.8849,
+  513.56854, 539.1032, 565.51056, 592.53876, 624.4434,
+  651.47015, 679.4968, 707.79407, 736.67145, 765.64026,
+  794.7734, 824.67737, 851.1578, 877.74207, 914.2291,
+  946.74677, 979.4114, 1011.223, 1044.7917, 1077.4437,
+  1109.9976, 1142.9766, 1176.3695, 1210.1844, 1253.8357,
+  1288.9528, 1325.4841, 1363.4569, 1405.0974, 1446.8535,
+];
+
+/** The game's level base for a transformative reaction. */
+export function reactionLevelBase(level) {
+  const index = Math.min(Math.max(Math.floor(Number(level) || 1), 1), 90) - 1;
+  return REACTION_LEVEL_BASE[index];
+}
+
+/** Transformative EM bonus: `16 * EM / (EM + 2000)`. */
+export const transformativeEmBonus = (em) => {
+  const value = Math.max(0, Number(em) || 0);
+  return (16 * value) / (value + 2000);
+};
+
+/**
+ * The damage type a transformative reaction itself deals.
+ *
+ * Direct hits carry the triggering element; a reaction does not always. The
+ * reaction table owns the explicit values (Overloaded is Pyro, Superconduct is
+ * Cryo, Bloom is Dendro). Swirl inherits the swirled aura's element, represented
+ * by the second entry of its pair in the current table.
+ */
+export function reactionDamageElement(reaction, hitElement) {
+  if (!reaction?.transformative) return null;
+  if (reaction.damageElement) return reaction.damageElement;
+  if (reaction.key === 'swirl') return reaction.pair?.[1] || hitElement;
+  return hitElement;
+}
+
 const BASIS_ALIASES = new Map([
   ['atk', 'atk'], ['attack', 'atk'], ['攻击力', 'atk'],
   ['hp', 'hp'], ['health', 'hp'], ['生命值', 'hp'],
@@ -218,11 +278,33 @@ export function computeDamage(
   const base = scalingValue * talent + (stats.flatDmg || 0);
 
   // Amplifying reaction (Vaporize / Melt): 2.78 x EM / (EM + 1400),
-  // plus any flat "reaction DMG bonus" the kit provides.
+  // plus any flat "reaction DMG bonus" the kit provides. Both bonuses sit in the
+  // SAME bracket in the game formula -- this used to multiply them, which
+  // overstated damage whenever both were non-zero.
+  // REF: docs/REACTIONS.md#amplifying
+  const reactionBonusPct = Number(reactionBonus) || 0;
   const emBonus = reaction.amp ? (2.78 * em) / (em + 1400) : 0;
   const reactMult = reaction.amp
-    ? reaction.base * (1 + emBonus) * (1 + reactionBonus / 100)
+    ? reaction.base * (1 + emBonus + reactionBonusPct / 100)
     : 1;
+
+  // Transformative reactions are an ADDITIONAL hit, not a multiplier on the
+  // triggering hit. Their defence zone is exactly 1: the game does not run
+  // reaction damage through the DEF formula. They also ignore CRIT, DMG bonus
+  // and the talent multiplier; only level, reaction coefficient, EM, reaction
+  // bonus and the target's resistance remain.
+  // REF: docs/REACTIONS.md#transformative
+  const transformative = Boolean(reaction.transformative && Number(reaction.coefficient) > 0);
+  const reactionBase = transformative
+    ? reactionLevelBase(atkLevel) * Number(reaction.coefficient)
+    : 0;
+  const reactionEmBonus = transformative ? transformativeEmBonus(em) : 0;
+  const reactionTarget = transformative ? reactionDamageElement(reaction, element) : null;
+  const reactionResMult = transformative ? resMultiplier(stats, reactionTarget) : 1;
+  const reactionBaseDamage = reactionBase * reactionResMult;
+  const reactionPerHit = transformative
+    ? reactionBaseDamage * (1 + reactionEmBonus + reactionBonusPct / 100)
+    : 0;
 
   /**
    * Crit multiplier.
@@ -284,13 +366,18 @@ export function computeDamage(
   // multiplies rather than adding. `1` when there are no such buffs, which leaves
   // every existing entry arithmetically identical.
   const zoned = withBonus * zoneMult;
-  const perHit = zoned * reactMult * critMult * defMult * resMult;
-  const total = perHit * (stage.hits || 1);
+  const directPerHit = zoned * reactMult * critMult * defMult * resMult;
+  const perHit = directPerHit + reactionPerHit;
+  const hits = stage.hits || 1;
+  const reactionTotal = reactionPerHit * hits;
+  const total = perHit * hits;
 
   return {
     totalHp, totalAtk, totalDef, talent, emBonus, reactMult, critMult,
-    defMult, resMult, bonusPct, withBonus, zoneMult, multZone, zoned, perHit,
-    total, er, scalingBasis, scalingValue,
+    defMult, resMult, bonusPct, withBonus, zoneMult, multZone, zoned,
+    directPerHit, reactionBase, reactionBaseDamage, reactionEmBonus,
+    reactionTarget, reactionResMult, reactionPerHit, reactionTotal,
+    transformative, perHit, total, er, scalingBasis, scalingValue,
   };
 }
 
