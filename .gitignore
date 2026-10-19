@@ -92,6 +92,14 @@ desktop.ini
 .env.local
 .env.*.local
 
+# --------------------------------------------------------------- .NET / C#
+# The C# service's build output and the local SDK/NuGet caches used by this repo.
+server/**/bin/
+server/**/obj/
+server/**/.vs/
+.dotnet/
+.nuget/
+
 # Chrome profiles for the browser tests -- disposable, see scratch/_profiles.mjs
 tmp/
 
