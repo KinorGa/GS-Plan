@@ -7,6 +7,7 @@ public sealed class ResolvedPaths
     public required string RepoRoot { get; init; }
     public required string DistRoot { get; init; }
     public required string DataFile { get; init; }
+    public required string StatsFile { get; init; }
     public required string OptimizerPath { get; init; }
 }
 
@@ -24,6 +25,10 @@ public static class AppPaths
                 options.DataFile,
                 repoRoot,
                 Path.Combine("data", "config", "buff-library.json")),
+            StatsFile = ResolveConfigured(
+                options.StatsFile,
+                repoRoot,
+                Path.Combine("public", "data", "stats-compact.json")),
             OptimizerPath = ResolveConfigured(
                 options.OptimizerPath,
                 repoRoot,

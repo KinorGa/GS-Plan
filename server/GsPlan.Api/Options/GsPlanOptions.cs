@@ -9,6 +9,7 @@ public sealed class GsPlanOptions
 
     public string? DistRoot { get; set; }
     public string? DataFile { get; set; }
+    public string? StatsFile { get; set; }
     public string? OptimizerPath { get; set; }
 
     public long MaxBodyBytes { get; set; } = 32L * 1024 * 1024;

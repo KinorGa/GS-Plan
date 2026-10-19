@@ -4,6 +4,7 @@ This is the ASP.NET Core replacement for the small Node server in `serve.mjs`.
 It serves the existing `dist/` build and exposes the same `/api/data`,
 `/api/optimize` and `/api/vision` routes. The C++ optimiser is unchanged: the
 service starts `native/optimize/optimize.exe` exactly as the Node server does.
+The pure damage and stat-derivation modules now live in `server/GsPlan.Core`.
 
 ## Run
 
@@ -32,6 +33,7 @@ also be overridden with environment variables such as:
 
 ```powershell
 $env:GsPlan__Port = "5200"
+$env:GsPlan__StatsFile = "D:\CPT\GS-Plan\public\data\stats-compact.json"
 $env:GsPlan__OptimizerPath = "D:\CPT\GS-Plan\native\optimize\optimize.exe"
 dotnet run --project server/GsPlan.Api
 ```
@@ -45,7 +47,12 @@ published, put `dist/` beside the executable or set `GsPlan:RepoRoot`.
 - `GET /api/data`, `PUT /api/data`, `POST /api/data`
 - `POST /api/optimize`
 - `GET /api/vision`, `POST /api/vision`
+- `POST /api/core/damage`
+- `POST /api/core/derive-panel`
 - Static `dist/` files with SPA fallback
 
-Damage formulas and other domain calculations are still in JavaScript in this
-phase. The next phase moves the pure calculation modules into `GsPlan.Core`.
+`GsPlan.Core` is the C# port of `src/lib/damage.js`, `stat-derive.js`,
+`stat-tables.js`, the artifact main-stat curves and the artifact stat keys. The
+two `/api/core` routes are test-facing in this phase: the UI still calls the JS
+modules, while `tests/check-csharp-core.mjs` compares every result field against
+the JS implementation. Migrating UI callers is a later phase.

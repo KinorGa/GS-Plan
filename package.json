@@ -8,7 +8,7 @@
     "build": "node build.mjs",
     "build:csharp": "dotnet build server/GsPlan.Api/GsPlan.Api.csproj",
     "dev:csharp": "npm run build && dotnet run --project server/GsPlan.Api",
-    "test:csharp": "node --import ./tests/register-jsx-run.mjs tests/check-csharp-api.mjs",
+    "test:csharp": "node --import ./tests/register-jsx-run.mjs tests/check-csharp-api.mjs && node --import ./tests/register-jsx-run.mjs tests/check-csharp-core.mjs",
     "start": "node serve.mjs",
     "fetch": "node scripts/fetch-lunaris.mjs",
     "fetch:check": "node scripts/fetch-lunaris.mjs --check",

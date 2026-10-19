@@ -26,6 +26,7 @@ builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(json =>
 builder.Services.AddSingleton(_ => AppPaths.Resolve(options, contentRoot));
 builder.Services.AddSingleton<DataStore>();
 builder.Services.AddSingleton<OptimizerRunner>();
+builder.Services.AddSingleton<StatsCatalog>();
 builder.Services.AddHttpClient("vision", (services, client) =>
 {
     var current = services.GetRequiredService<IOptions<GsPlanOptions>>().Value;
@@ -39,6 +40,7 @@ var paths = app.Services.GetRequiredService<ResolvedPaths>();
 app.Logger.LogInformation("Repo root: {RepoRoot}", paths.RepoRoot);
 app.Logger.LogInformation("Serving dist: {DistRoot}", paths.DistRoot);
 app.Logger.LogInformation("Data file: {DataFile}", paths.DataFile);
+app.Logger.LogInformation("Stats file: {StatsFile}", paths.StatsFile);
 app.Logger.LogInformation("Optimizer: {OptimizerPath}", paths.OptimizerPath);
 
 if (Directory.Exists(paths.DistRoot))
@@ -73,6 +75,7 @@ app.MapGet("/api/health", () => Results.Json(new { ok = true, service = "gs-plan
 app.MapDataEndpoints();
 app.MapOptimizeEndpoints();
 app.MapVisionEndpoints();
+app.MapCoreEndpoints();
 
 // Method mismatches must be 405, not the SPA fallback's 404. These routes have
 // no method constraint, so they only win after the method-specific endpoints
@@ -80,6 +83,8 @@ app.MapVisionEndpoints();
 app.Map("/api/data", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 app.Map("/api/optimize", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 app.Map("/api/vision", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
+app.Map("/api/core/damage", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
+app.Map("/api/core/derive-panel", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 
 app.MapFallback(async context =>
 {
