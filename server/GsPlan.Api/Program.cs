@@ -84,7 +84,10 @@ app.Map("/api/data", () => Results.StatusCode(StatusCodes.Status405MethodNotAllo
 app.Map("/api/optimize", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 app.Map("/api/vision", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 app.Map("/api/core/damage", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
+app.Map("/api/core/damage-batch", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 app.Map("/api/core/derive-panel", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
+app.Map("/api/core/derive-panel-batch", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
+app.Map("/api/core/meta", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 
 app.MapFallback(async context =>
 {

@@ -1,7 +1,7 @@
 // Compare the C# service with the current Node server on the routes the page
 // actually uses. The C# DLL is a build output, so the test runner skips this
 // check until `dotnet build server/GsPlan.Api/GsPlan.Api.csproj` has run.
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import net from 'node:net';
 import path from 'node:path';
 import process from 'node:process';
@@ -55,7 +55,12 @@ const request = async (base, pathname, init) => {
 
 const children = [];
 const stop = (child) => {
-  if (!child || child.exitCode != null) return;
+  if (!child) return;
+  if (process.platform === 'win32') {
+    spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+    return;
+  }
+  if (child.exitCode != null) return;
   try { child.kill(); } catch { /* best effort */ }
 };
 

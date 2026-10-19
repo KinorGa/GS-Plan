@@ -48,6 +48,7 @@ const FIXTURES = {
     'public/data/stats-compact.json',
     'server/GsPlan.Api/bin/Debug/net8.0/GsPlan.Api.dll',
   ],
+  'check-core-client.mjs': ['data/lunaris-config-2026-10-07.json'],
   'check-child-notes.mjs': ['data/法布尼-ft.json'],
   'check-derive-precise.mjs': ['public/data/char/chs/10000343.json'],
   'check-crit-flow.mjs': ['data/lunaris-config-2026-10-07.json'],

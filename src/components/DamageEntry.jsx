@@ -22,7 +22,8 @@ import { elementOf } from '../game';
 import { buildSources, FLAT_SOURCE_PREFIX } from '../char-sources';
 import { useTalentDamage } from '../lib/use-talent-damage'
 import { useFitScale } from '../lib/use-fit-scale';
-import { computeDamage, entryScalingBasis } from '../lib/damage';
+import { entryScalingBasis } from '../lib/damage';
+import { useCoreDamage, useCoreDerivedPanel } from '../lib/core-client';
 import { useCatalogue, loadCharacterDetail } from '../lib/catalogue';
 import { derivePanel } from '../lib/stat-derive';
 import { repairOverrides } from '../lib/axes-store';
@@ -168,6 +169,29 @@ function DamageEntry({
   }, [char, charData, catalogue]);
 
   /**
+   * The same derivation sent to the C# core when it is serving the page. The
+   * hook returns the JS result above until the batched response arrives, so the
+   * card never waits for the service. `detail` is omitted when the compact stat
+   * factors are present because the core does not need the rounded fallback
+   * table in that case.
+   */
+  const corePanelRequest = useMemo(() => {
+    if (!char || !charData) return null;
+    const weapon = char.weaponId ? catalogue?.weapons?.[char.weaponId] || null : null;
+    return {
+      charId: char.id,
+      detail: catalogue?.stats ? null : charData,
+      level: char.level,
+      element: char.element,
+      weaponId: char.weaponId,
+      weapon,
+      artifacts: char.artifacts,
+      useStats: true,
+    };
+  }, [char, charData, catalogue]);
+  const derivedPanel = useCoreDerivedPanel(corePanelRequest, derived);
+
+  /**
    * The panel the card edits: defaults, then the derived values, then the user's
    * own edits on top.
    *
@@ -176,8 +200,8 @@ function DamageEntry({
    * and a field they changed stays changed when the artifacts move.
    */
   const effectiveStats = useMemo(
-    () => ({ ...defaultStats(), ...(derived?.values || {}), ...(entry.statOverrides || {}) }),
-    [derived, entry.statOverrides]
+    () => ({ ...defaultStats(), ...(derivedPanel?.values || {}), ...(entry.statOverrides || {}) }),
+    [derivedPanel, entry.statOverrides]
   );
 
   // A per-key edit rebuilds the override set from what is ON SCREEN, so it has to
@@ -394,9 +418,11 @@ function DamageEntry({
    * separate field here — or falling back to raw BASE_STATS — is exactly what
    * made the row disagree with the card.
    */
-  const liveSummary = useMemo(() => {
+  const liveInput = useMemo(() => {
     const sel = entry.summary;
-    if (!sel || !charData || entry.charId === 'none') return sel || null;
+    if (!sel || !charData || entry.charId === 'none') {
+      return { fallback: sel || null, request: null, summary: null, hits: 1 };
+    }
 
     // WHICH ROW OF THE SOURCE. `summary` is the last REPORT and does not always
     // carry a `stageIndex`: an IMPORTED row's summary is written by the file
@@ -409,7 +435,7 @@ function DamageEntry({
     // the collapsed row, the card and the axis all read the same stage.
     const stageIndex = sel.stageIndex ?? entry.picked?.stageIndex ?? 0;
     const src = sources.find((s) => s.key === (sel.sourceKey || entry.picked?.sourceKey)) || sources[0];
-    if (!src) return sel;
+    if (!src) return { fallback: sel, request: null, summary: null, hits: 1 };
     const stage = src.stages[Math.min(Math.max(0, stageIndex), src.stages.length - 1)];
 
     // WHICH PART OF THE ROW, and what element it carries.
@@ -452,41 +478,53 @@ function DamageEntry({
     // RIGHT number for the row while the card produced a different one -- the card
     // was handed the unmerged panel and told to merge nothing. Both now read the
     // one merge.
-    const r = computeDamage(panelStats, {
-      stage: effective,
-      reaction: reactionByKey(entry.reactionKey ?? sel.reactionKey),
-      element: usedElement,
-      // The entry's own stored choice, NOT `sel.critMode`. The summary is the
-      // card's report and is only as fresh as the last render of a mounted card;
-      // the row must agree with the card the instant the button is pressed, and it
-      // recomputes while the card is unmounted. Reading the summary here is what
-      // let the collapsed row keep showing an average after the user had picked a
-      // crit -- and, worse, after a collapse it was the ONLY surviving value.
-      critMode: entry.critMode || 'avg',
-      // The same independent zones the card applies, so the collapsed row and the
-      // card cannot disagree about a user-named buff.
-      zoneMult,
-      multZone,
-      // The ROW reads the same attacker level the card does. Omitting it here
-      // would restore the exact divergence this recompute exists to prevent: the
-      // row on the formula's 90 default while the card used the real level.
-      atkLevel: Number(char?.level) || 90,
-      basis: entryScalingBasis(entry),
-    });
-
-    // `stageIndex` goes back out WITH the report: without it the stored summary
-    // stays index-less, this recompute keeps choosing index 0, and the header --
-    // which prefers the reported `stage` -- keeps naming the wrong row.
+    const scalingBasis = entryScalingBasis(entry);
+    const hits = effective.hits || 1;
     return {
-      ...sel, sourceKey: src.key, stageIndex, stage, element: usedElement,
-      partIndex: pinnedPart,
-      scalingBasis: entryScalingBasis(entry),
-      perHit: r.perHit, total: r.total, hits: effective.hits || 1,
+      fallback: null,
+      request: {
+        stats: panelStats,
+        stage: effective,
+        reaction: reactionByKey(entry.reactionKey ?? sel.reactionKey),
+        element: usedElement,
+        // The entry's own stored choice, NOT `sel.critMode`. The summary is the
+        // card's report and is only as fresh as the last render of a mounted card;
+        // the row must agree with the card the instant the button is pressed, and
+        // it recomputes while the card is unmounted.
+        critMode: entry.critMode || 'avg',
+        // The same independent zones the card applies, so the collapsed row and
+        // the card cannot disagree about a user-named buff.
+        zoneMult,
+        multZone,
+        // The ROW reads the same attacker level the card does.
+        atkLevel: Number(char?.level) || 90,
+        basis: scalingBasis,
+      },
+      // `stageIndex` goes back out WITH the report: without it the stored summary
+      // stays index-less, this recompute keeps choosing index 0, and the header --
+      // which prefers the reported `stage` -- keeps naming the wrong row.
+      summary: {
+        ...sel, sourceKey: src.key, stageIndex, stage, element: usedElement,
+        partIndex: pinnedPart,
+        scalingBasis,
+      },
+      hits,
     };
     // `char` is a dependency because the defence zone reads its level -- without
     // it the row keeps a number computed at the old level after the panel changes.
     // `zoneMult` too: dropping a card that names its own zone must move the row.
   }, [entry.summary, entry.charId, entry.picked, panelStats, charData, sources, partIndex, element, char, zoneMult, multZone, entry.scaling, entry.scalingBasis]);
+
+  const liveResult = useCoreDamage(liveInput.request);
+  const liveSummary = useMemo(() => {
+    if (!liveInput.request) return liveInput.fallback;
+    return {
+      ...liveInput.summary,
+      perHit: liveResult.perHit,
+      total: liveResult.total,
+      hits: liveInput.hits,
+    };
+  }, [liveInput, liveResult]);
 
   const summary = liveSummary;
 

@@ -47,12 +47,27 @@ published, put `dist/` beside the executable or set `GsPlan:RepoRoot`.
 - `GET /api/data`, `PUT /api/data`, `POST /api/data`
 - `POST /api/optimize`
 - `GET /api/vision`, `POST /api/vision`
+- `GET /api/core/meta`
 - `POST /api/core/damage`
+- `POST /api/core/damage-batch`
 - `POST /api/core/derive-panel`
+- `POST /api/core/derive-panel-batch`
 - Static `dist/` files with SPA fallback
 
 `GsPlan.Core` is the C# port of `src/lib/damage.js`, `stat-derive.js`,
 `stat-tables.js`, the artifact main-stat curves and the artifact stat keys. The
-two `/api/core` routes are test-facing in this phase: the UI still calls the JS
-modules, while `tests/check-csharp-core.mjs` compares every result field against
-the JS implementation. Migrating UI callers is a later phase.
+UI reaches it through `src/lib/core-client.js`:
+
+- The page renders the JS result immediately, so a missing service never blocks
+  the first paint.
+- The adapter probes `GET /api/core/meta`. When the C# service answers, it
+  coalesces every damage/panel request made in one commit into one batch call
+  and upgrades the rendered numbers when the response arrives.
+- Identical requests are cached and shared. A failed request silently leaves the
+  JS result in place.
+- `localStorage.gsplan.core = 'js'` forces the JS path; `'core'` makes the intent
+  explicit; removing the key restores automatic detection.
+
+`tests/check-csharp-core.mjs` compares every single and batch result field with
+the JS implementation, while `tests/check-core-client.mjs` verifies the real
+browser switch and the no-Core fallback.

@@ -1,7 +1,7 @@
 // Compare GsPlan.Core with the JavaScript formula it was ported from. The
 // endpoint is deliberately test-facing in this phase: the UI still calls JS, so
 // this check is what prevents the two implementations from drifting.
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
@@ -203,6 +203,9 @@ try {
     stdio: 'ignore',
   });
   await waitFor(base + '/api/health');
+  const meta = await fetch(base + '/api/core/meta').then((response) => response.json());
+  ok('core meta identifies the service', meta.ok === true && meta.service === 'gs-plan-core');
+  ok('core meta advertises batch routes', meta.batchDamage === true && meta.batchDerivePanel === true);
 
   const damageCases = [
     {
@@ -300,14 +303,26 @@ try {
     });
   }
 
+  const damageRequests = [];
+  const damageExpected = [];
   for (const item of damageCases) {
     const expected = computeDamage(item.stats, item.options);
-    const actual = await post(base, '/api/core/damage', {
+    const request = {
       stats: item.stats,
       ...item.options,
-    });
+    };
+    const actual = await post(base, '/api/core/damage', request);
     compareDamage(item.name, expected, actual);
+    damageRequests.push(request);
+    damageExpected.push(expected);
   }
+
+  const damageBatch = await post(base, '/api/core/damage-batch', { requests: damageRequests });
+  ok('damage batch returns every result in order', damageBatch.results?.length === damageRequests.length);
+  damageExpected.forEach((expected, index) => {
+    compareDamage(`damage batch: ${damageCases[index].name.replace(/^damage: /, '')}`,
+      expected, damageBatch.results[index]);
+  });
 
   const preciseInput = {
     charId: '10000128', detail: null, level: 95, element: 'Anemo',
@@ -341,6 +356,14 @@ try {
   const missingActual = await post(base, '/api/core/derive-panel', missingInput);
   comparePanel('panel: missing stat table reports no-stat-table', missingExpected, missingActual);
 
+  const panelRequests = [preciseInput, fallbackInput, missingInput];
+  const panelExpected = [preciseExpected, fallbackExpected, missingExpected];
+  const panelBatch = await post(base, '/api/core/derive-panel-batch', { requests: panelRequests });
+  ok('panel batch returns every result in order', panelBatch.results?.length === panelRequests.length);
+  panelExpected.forEach((expected, index) => {
+    comparePanel(`panel batch: request ${index + 1}`, expected, panelBatch.results[index]);
+  });
+
   const badDamage = await fetch(base + '/api/core/damage', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{bad',
   });
@@ -351,12 +374,20 @@ try {
   ok('damage: missing stats is 400', missingStats.status === 400);
   const wrongMethod = await fetch(base + '/api/core/derive-panel');
   ok('core endpoint: unsupported method is 405', wrongMethod.status === 405);
+  const badBatch = await fetch(base + '/api/core/damage-batch', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"requests":[{}]}',
+  });
+  ok('damage batch: missing stats is 400', badBatch.status === 400);
 } catch (error) {
   fail += 1;
   console.log('FAIL  ' + String(error?.stack || error));
 } finally {
-  if (server && server.exitCode == null) {
-    try { server.kill(); } catch { /* best effort */ }
+  if (server) {
+    if (process.platform === 'win32') {
+      spawnSync('taskkill', ['/pid', String(server.pid), '/T', '/F'], { stdio: 'ignore' });
+    } else if (server.exitCode == null) {
+      try { server.kill(); } catch { /* best effort */ }
+    }
   }
 }
 

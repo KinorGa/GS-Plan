@@ -11,7 +11,8 @@ import { iconImg, talentIconImg, elementOf, ICON_WHITE } from './game';
 import CharacterArt from './components/CharacterArt.jsx';
 import { useI18n } from './i18n';
 import { foldBuffs, mergeStats } from './components/buff-model';
-import { computeDamage, normaliseScalingBasis, SCALING_BASES } from './lib/damage';
+import { normaliseScalingBasis, SCALING_BASES } from './lib/damage';
+import { useCoreDamage } from './lib/core-client';
 import { DAMAGE_TYPES, KEY_SUFFIX, TYPE_ZH as ELEMENT_ZH } from './lib/elements';
 import { stageMultiplierText } from './char-sources';
 import { useDisplayPrecision, formatNumber } from './lib/display-prefs';
@@ -773,20 +774,21 @@ export default function DamageCard({
   // level moved the panel's ATK (which scales with level) while the defence zone
   // stayed put -- the two halves of the same number disagreeing about how strong
   // the character was.
-  const result = useMemo(
-    () =>
-      computeDamage(effectiveStats, {
-        stage: effectiveStage,
-        reaction,
-        element: hitElementName,
-        critMode,
-        atkLevel,
-        zoneMult,
-        multZone,
-        basis: scalingBasis,
-      }),
-    [effectiveStats, effectiveStage, reaction, critMode, hitElementName, atkLevel, zoneMult, multZone, scalingBasis]
-  );
+  const coreRequest = useMemo(() => ({
+    stats: effectiveStats,
+    stage: effectiveStage,
+    reaction,
+    element: hitElementName,
+    critMode,
+    atkLevel,
+    zoneMult,
+    multZone,
+    basis: scalingBasis,
+  }), [
+    effectiveStats, effectiveStage, reaction, critMode, hitElementName,
+    atkLevel, zoneMult, multZone, scalingBasis,
+  ]);
+  const result = useCoreDamage(coreRequest);
 
   // Publish the current selection + damage so a host can render a collapsed
   // row. The card keeps ownership of its own state; the host only reads.
