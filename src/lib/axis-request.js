@@ -87,3 +87,11 @@ export function axisRequest(entries, team, lang = 'chs') {
     team: (team || []).map(compactUnit),
   };
 }
+
+/** The body of `POST /api/core/merged-expression`. */
+export function mergedExpressionRequest(entries, team, charId, lang = 'chs') {
+  return {
+    ...axisRequest(entries, team, lang),
+    charId,
+  };
+}

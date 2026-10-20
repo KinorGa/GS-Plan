@@ -70,15 +70,35 @@ public static class AxisCalculator
 
         if (entry.CharId == "none" || string.IsNullOrEmpty(entry.CharId)) return null;
 
-        var panel = context.PanelForEntry(entry);
-        if (!panel.HasDetail) return null;
-        var sources = context.SourcesForEntry(entry);
-        if (sources.Count == 0) return null;
+        var computed = ComputePartsForEntry(entry, context);
+        if (computed.Count == 0) return null;
+        return new AxisEntryResult
+        {
+            Parts = computed.Select(part => part.Result).ToList(),
+            PerHit = computed.Sum(part => part.Result.PerHit),
+            Total = computed.Sum(part => part.Result.Total),
+            Hits = entry.Children is { Count: > 0 } ? 1 : computed[0].Result.Hits,
+        };
+    }
 
+    /// <summary>
+    /// Every computed part of one non-segment entry. Shared with the merged
+    /// expression, which needs the same factors and panels the axis used rather
+    /// than a second implementation of the damage row.
+    /// </summary>
+    internal static List<AxisPartComputation> ComputePartsForEntry(
+        AxisEntry entry,
+        AxisContext context)
+    {
+        var panel = context.PanelForEntry(entry);
+        if (!panel.HasDetail) return [];
+        var sources = context.SourcesForEntry(entry);
+        if (sources.Count == 0) return [];
+
+        var parts = new List<AxisPartComputation>();
         if (entry.Children is { Count: > 0 })
         {
             var parentBasis = EntryScalingBasis(entry, "atk");
-            var parts = new List<AxisPartResult>();
             foreach (var child in entry.Children)
             {
                 var part = ComputePart(
@@ -96,14 +116,7 @@ public static class AxisCalculator
                     EntryScalingBasis(child, parentBasis));
                 if (part is not null) parts.Add(part);
             }
-            if (parts.Count == 0) return null;
-            return new AxisEntryResult
-            {
-                Parts = parts,
-                PerHit = parts.Sum(part => part.PerHit),
-                Total = parts.Sum(part => part.Total),
-                Hits = 1,
-            };
+            return parts;
         }
 
         var one = ComputePart(
@@ -119,17 +132,11 @@ public static class AxisCalculator
             entry.Scaling?.Mult,
             entry.Scaling?.Hits,
             EntryScalingBasis(entry, "atk"));
-        if (one is null) return null;
-        return new AxisEntryResult
-        {
-            Parts = [one],
-            PerHit = one.PerHit,
-            Total = one.Total,
-            Hits = one.Hits,
-        };
+        if (one is not null) parts.Add(one);
+        return parts;
     }
 
-    private static AxisPartResult? ComputePart(
+    private static AxisPartComputation? ComputePart(
         AxisEntry entry,
         AxisContext context,
         AxisPanelState panel,
@@ -178,10 +185,11 @@ public static class AxisCalculator
         var usedElement = FirstNonEmpty(element, summary?.Element, source.Element);
         var attackerLevel = panel.Unit?.Level ?? 0;
         if (attackerLevel == 0 || !double.IsFinite(attackerLevel)) attackerLevel = 90;
+        var reaction = AxisReactionTable.ByKey(entry.ReactionKey ?? summary?.ReactionKey);
         var result = DamageCalculator.Compute(AxisPanelStats.ToDamageStats(stats), new DamageOptions
         {
             Stage = new DamageStage { Mult = partMult, Hits = partHits },
-            Reaction = AxisReactionTable.ByKey(entry.ReactionKey ?? summary?.ReactionKey),
+            Reaction = reaction,
             Element = usedElement,
             CritMode = string.IsNullOrEmpty(critMode) ? "avg" : critMode,
             AtkLevel = attackerLevel,
@@ -190,15 +198,25 @@ public static class AxisCalculator
             Basis = basis,
         });
 
-        return new AxisPartResult
+        var normalisedHits = partHits == 0 || double.IsNaN(partHits) ? 1 : partHits;
+        return new AxisPartComputation
         {
-            PartIndex = partIndex,
+            Result = new AxisPartResult
+            {
+                PartIndex = partIndex,
+                Element = usedElement,
+                PerHit = result.PerHit,
+                Total = result.Total,
+                Hits = normalisedHits,
+                Mult = partMult,
+                ScalingBasis = result.ScalingBasis,
+            },
+            Damage = result,
+            Panel = panel.Panel,
+            WithBuffs = stats,
+            Reaction = reaction,
             Element = usedElement,
-            PerHit = result.PerHit,
-            Total = result.Total,
-            Hits = partHits == 0 || double.IsNaN(partHits) ? 1 : partHits,
-            Mult = partMult,
-            ScalingBasis = result.ScalingBasis,
+            PartHits = normalisedHits,
         };
     }
 
@@ -211,4 +229,19 @@ public static class AxisCalculator
 
     private static string? NullIfEmpty(string? value)
         => string.IsNullOrEmpty(value) ? null : value;
+}
+
+/// <summary>
+/// One computed part with the intermediate factors the merged expression needs.
+/// The public axis result intentionally exposes only totals.
+/// </summary>
+internal sealed class AxisPartComputation
+{
+    public required AxisPartResult Result { get; init; }
+    public required DamageResult Damage { get; init; }
+    public required IReadOnlyDictionary<string, double> Panel { get; init; }
+    public required IReadOnlyDictionary<string, double> WithBuffs { get; init; }
+    public required DamageReaction Reaction { get; init; }
+    public string? Element { get; init; }
+    public double PartHits { get; init; }
 }

@@ -89,6 +89,7 @@ app.Map("/api/core/damage-batch", () => Results.StatusCode(StatusCodes.Status405
 app.Map("/api/core/derive-panel", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 app.Map("/api/core/derive-panel-batch", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 app.Map("/api/core/axis", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
+app.Map("/api/core/merged-expression", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 app.Map("/api/core/meta", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 
 app.MapFallback(async context =>

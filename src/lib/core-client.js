@@ -3,9 +3,10 @@
 // THE UI IS SYNCHRONOUS BY DESIGN. A row must have a number on its first paint,
 // even when the C# service is absent (the ordinary Node dev server) or the
 // detail data is still loading. So every hook returns the JS result immediately
-// and upgrades to the C# result only after it arrives. Identical requests made in
-// one commit are coalesced into one batch request, and the last results are
-// cached so switching crit modes back and forth does not repost the same panel.
+// and upgrades to the C# result only after it arrives. Damage and panel requests
+// made in one commit are coalesced into a batch; whole-axis and merged-expression
+// requests use their own endpoints, and every result is cached so revisiting the
+// same state does not repost it.
 //
 // MODE:
 //   auto (default)  use C# when /api/core/meta identifies the service
@@ -19,6 +20,7 @@ const META_URL = '/api/core/meta';
 const DAMAGE_BATCH_URL = '/api/core/damage-batch';
 const PANEL_BATCH_URL = '/api/core/derive-panel-batch';
 const AXIS_URL = '/api/core/axis';
+const MERGED_EXPRESSION_URL = '/api/core/merged-expression';
 const PREFERENCE_KEY = 'gsplan.core';
 const CACHE_LIMIT = 512;
 
@@ -27,12 +29,15 @@ let scheduled = false;
 const damageCache = new Map();
 const panelCache = new Map();
 const axisCache = new Map();
+const mergedCache = new Map();
 const pendingDamage = new Map();
 const pendingPanels = new Map();
 const pendingAxes = new Map();
+const pendingMerged = new Map();
 let damageQueue = [];
 let panelQueue = [];
 let axisQueue = [];
+let mergedQueue = [];
 
 const readPreference = () => {
   try {
@@ -69,6 +74,7 @@ export function invalidateCoreClient() {
   damageCache.clear();
   panelCache.clear();
   axisCache.clear();
+  mergedCache.clear();
 }
 
 /** Whether the current page is served by a core-capable service. */
@@ -131,13 +137,20 @@ function schedule() {
     flushDamage();
     flushPanels();
     flushAxes();
+    flushMerged();
   });
 }
 
 function enqueue(kind, request, key) {
-  const cache = kind === 'damage' ? damageCache : kind === 'panel' ? panelCache : axisCache;
-  const pending = kind === 'damage' ? pendingDamage : kind === 'panel' ? pendingPanels : pendingAxes;
-  const queue = kind === 'damage' ? damageQueue : kind === 'panel' ? panelQueue : axisQueue;
+  const cache = kind === 'damage' ? damageCache
+    : kind === 'panel' ? panelCache
+      : kind === 'axis' ? axisCache : mergedCache;
+  const pending = kind === 'damage' ? pendingDamage
+    : kind === 'panel' ? pendingPanels
+      : kind === 'axis' ? pendingAxes : pendingMerged;
+  const queue = kind === 'damage' ? damageQueue
+    : kind === 'panel' ? panelQueue
+      : kind === 'axis' ? axisQueue : mergedQueue;
 
   if (cache.has(key)) return Promise.resolve(cache.get(key));
   if (pending.has(key)) return pending.get(key);
@@ -162,6 +175,23 @@ async function flushAxes() {
       item.resolve(result);
     } catch (error) {
       pendingAxes.delete(item.key);
+      item.reject(error);
+    }
+  }));
+}
+
+async function flushMerged() {
+  const batch = mergedQueue;
+  mergedQueue = [];
+  if (!batch.length) return;
+  await Promise.all(batch.map(async (item) => {
+    try {
+      const result = await postJson(MERGED_EXPRESSION_URL, item.request);
+      remember(mergedCache, item.key, result);
+      pendingMerged.delete(item.key);
+      item.resolve(result);
+    } catch (error) {
+      pendingMerged.delete(item.key);
       item.reject(error);
     }
   }));
@@ -276,4 +306,13 @@ export function useCoreAxis(request, fallback) {
         : new Map(Object.entries(remote.byId || {})),
     };
   }, [remote, fallback]);
+}
+
+/**
+ * Upgrade a character's JS merged expression with the C# polynomial. The
+ * fallback stays authoritative until the remote copy arrives; both are the same
+ * coefficient contract, so a caller can serialise either one.
+ */
+export function useCoreMergedExpression(request, fallback) {
+  return useRemoteCore('merged', request, fallback);
 }

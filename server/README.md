@@ -53,6 +53,7 @@ published, put `dist/` beside the executable or set `GsPlan:RepoRoot`.
 - `POST /api/core/derive-panel`
 - `POST /api/core/derive-panel-batch`
 - `POST /api/core/axis`
+- `POST /api/core/merged-expression`
 - Static `dist/` files with SPA fallback
 
 `GsPlan.Core` is the C# port of `src/lib/damage.js`, `stat-derive.js`,
@@ -72,11 +73,17 @@ it through `src/lib/core-client.js`:
 - The whole axis is recalculated in one `POST /api/core/axis` request. The JS
   result is still the synchronous first paint; the C# result replaces it when
   the response arrives.
+- The artifact optimiser's per-character polynomial is calculated by
+  `POST /api/core/merged-expression`. It reads the same damage rows and buffs
+  as the axis, so a coefficient cannot come from a second interpretation of the
+  formula.
 - `localStorage.gsplan.core = 'js'` forces the JS path; `'core'` makes the intent
   explicit; removing the key restores automatic detection.
 
 `tests/check-csharp-core.mjs` compares every single and batch result field with
 the JS implementation. `tests/check-csharp-axis.mjs` compares complete axes,
-entry parts, buff formulas and custom zones against the JS implementation, while
-`tests/check-core-client.mjs` verifies the real browser switch and the no-Core
-fallback.
+entry parts, buff formulas and custom zones against the JS implementation.
+`tests/check-csharp-merged.mjs` compares the merged artifact polynomial,
+including amplifying and transformative terms, alternative scaling stats and
+rotation segments. `tests/check-core-client.mjs` verifies the real browser
+switch and the no-Core fallback.

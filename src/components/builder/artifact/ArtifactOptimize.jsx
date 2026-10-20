@@ -47,6 +47,8 @@ import {
 import {
   damageAt, evaluate, evaluateAmp, mergedExpression, panelOf, variablesOf,
 } from '../../../lib/merged-expression';
+import { mergedExpressionRequest } from '../../../lib/axis-request';
+import { useCoreMergedExpression } from '../../../lib/core-client';
 import { SCALING_SYMBOL } from '../../../lib/damage';
 import { StatGlyph, StatMenu } from './StatGlyph';
 
@@ -111,17 +113,25 @@ function OptimizeDialog({ charId, build, optimize, onClose }) {
   // held until they are in.
   const { sets, loading: setsLoading } = useArtifacts(lang);
 
-  // The merged expression and the two panels, computed ONCE. The merge is
-  // synchronous and exact, so there is no loading state to model -- if the
-  // character's detail file is missing the merge returns null and the dialog says
-  // so rather than showing a plausible-looking nothing.
-  const expr = useMemo(() => mergedExpression({
+  // The merged expression and the two panels, computed ONCE. The merge is exact
+  // and has a synchronous JS fallback; when the C# service is present its copy
+  // replaces the fallback without adding a loading state. If the character's
+  // detail file is missing, the merge returns null and the dialog says so rather
+  // than showing a plausible-looking nothing.
+  const jsExpr = useMemo(() => mergedExpression({
     entries: optimize.entries,
     team: optimize.team,
     catalogue: optimize.catalogue,
     talentDamage: optimize.talentDamage,
     charId,
   }), [optimize, charId]);
+  const exprRequest = useMemo(
+    () => (optimize && charId
+      ? mergedExpressionRequest(optimize.entries, optimize.team, charId, lang)
+      : null),
+    [optimize, charId, lang]
+  );
+  const expr = useCoreMergedExpression(exprRequest, jsExpr);
 
   /** Which A/H/D/M symbols this character's merged polynomial actually uses. */
   const scalingSymbols = useMemo(

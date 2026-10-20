@@ -50,6 +50,7 @@ public static class CoreEndpoints
             batchDamage = true,
             batchDerivePanel = true,
             axis = true,
+            mergedExpression = true,
             maxBatchItems = MaxBatchItems,
         }));
 
@@ -226,11 +227,7 @@ public static class CoreEndpoints
             try
             {
                 var lang = string.IsNullOrWhiteSpace(request.Lang) ? "chs" : request.Lang;
-                var team = new Dictionary<string, AxisTeamUnit>(StringComparer.Ordinal);
-                foreach (var unit in request.Team ?? [])
-                {
-                    if (!string.IsNullOrEmpty(unit.Id)) team[unit.Id] = unit;
-                }
+                var team = TeamById(request.Team);
                 var result = AxisCalculator.Compute(request, new AxisComputationData
                 {
                     TeamById = team,
@@ -247,7 +244,69 @@ public static class CoreEndpoints
             }
         });
 
+        app.MapPost("/api/core/merged-expression", async (HttpContext context, CoreDataCatalog catalog) =>
+        {
+            var body = await ReadBodyAsync(context);
+            if (body.Error is not null) return body.Error;
+
+            MergedExpressionRequest? request;
+            try
+            {
+                request = JsonSerializer.Deserialize<MergedExpressionRequest>(body.Text!, JsonOptions);
+            }
+            catch (JsonException)
+            {
+                return ApiResults.Json(context, new { error = "body is not JSON" }, StatusCodes.Status400BadRequest);
+            }
+            if (request is null)
+            {
+                return ApiResults.Json(context, new { error = "body is required" }, StatusCodes.Status400BadRequest);
+            }
+            if (string.IsNullOrEmpty(request.CharId))
+            {
+                return ApiResults.Json(context, new { error = "charId is required" }, StatusCodes.Status400BadRequest);
+            }
+            if ((request.Entries?.Count ?? 0) > MaxBatchItems)
+            {
+                return ApiResults.Json(
+                    context,
+                    new { error = $"at most {MaxBatchItems} entries are allowed" },
+                    StatusCodes.Status400BadRequest);
+            }
+
+            try
+            {
+                var lang = string.IsNullOrWhiteSpace(request.Lang) ? "chs" : request.Lang;
+                var team = TeamById(request.Team);
+                var result = MergedExpressionCalculator.Compute(request, new AxisComputationData
+                {
+                    TeamById = team,
+                    DetailFor = id => catalog.GetCharacterDetail(lang, id),
+                    WeaponFor = catalog.GetWeapon,
+                    TalentDamage = catalog.TalentDamage,
+                    Stats = catalog.Stats,
+                });
+                return result is null
+                    ? ApiResults.Json(context, new { error = "character data is not available" }, StatusCodes.Status404NotFound)
+                    : ApiResults.Json(context, result);
+            }
+            catch (Exception ex)
+            {
+                return ApiResults.Json(context, new { error = ex.Message }, StatusCodes.Status500InternalServerError);
+            }
+        });
+
         return app;
+    }
+
+    private static Dictionary<string, AxisTeamUnit> TeamById(IEnumerable<AxisTeamUnit>? team)
+    {
+        var byId = new Dictionary<string, AxisTeamUnit>(StringComparer.Ordinal);
+        foreach (var unit in team ?? [])
+        {
+            if (!string.IsNullOrEmpty(unit.Id)) byId[unit.Id] = unit;
+        }
+        return byId;
     }
 
     private static DamageResult ComputeDamage(DamageRequest request)
