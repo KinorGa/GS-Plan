@@ -51,6 +51,7 @@ public static class CoreEndpoints
             batchDerivePanel = true,
             axis = true,
             mergedExpression = true,
+            artifactOptimize = true,
             maxBatchItems = MaxBatchItems,
         }));
 

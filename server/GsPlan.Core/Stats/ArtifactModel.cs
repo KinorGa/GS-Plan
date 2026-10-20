@@ -10,13 +10,16 @@ public static class ArtifactModel
     public static readonly HashSet<string> ElementOfDmgKey =
         new(DmgElements.Select(element => element + "Dmg"), StringComparer.Ordinal);
 
-    public static readonly HashSet<string> SubStats = new(
-        [
-            "hp", "atk", "def",
-            "hpPct", "atkPct", "defPct",
-            "em", "er", "critRate", "critDmg",
-        ],
-        StringComparer.Ordinal);
+    /// <summary>The substat order the optimizer's hit rows and CSV columns use.</summary>
+    public static readonly string[] SubStatOrder =
+    [
+        "hp", "atk", "def",
+        "hpPct", "atkPct", "defPct",
+        "em", "er", "critRate", "critDmg",
+    ];
+
+    public static readonly HashSet<string> SubStats =
+        new(SubStatOrder, StringComparer.Ordinal);
 
     public const int ArtifactLevelMax = 20;
 

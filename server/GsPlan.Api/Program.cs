@@ -83,6 +83,9 @@ app.MapCoreEndpoints();
 // above have declined the request.
 app.Map("/api/data", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 app.Map("/api/optimize", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
+app.Map("/api/optimize/artifact", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
+app.Map("/api/optimize/artifact/problem", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
+app.Map("/api/optimize/artifact/parse", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 app.Map("/api/vision", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 app.Map("/api/core/damage", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 app.Map("/api/core/damage-batch", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));

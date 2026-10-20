@@ -43,6 +43,10 @@ published, put `dist/` beside the executable or set `GsPlan:RepoRoot`.
 
 ## Current scope
 
+* `POST /api/optimize/artifact`
+* `POST /api/optimize/artifact/problem`
+* `POST /api/optimize/artifact/parse`
+
 - `GET /api/health`
 - `GET /api/data`, `PUT /api/data`, `POST /api/data`
 - `POST /api/optimize`
@@ -87,3 +91,14 @@ entry parts, buff formulas and custom zones against the JS implementation.
 including amplifying and transformative terms, alternative scaling stats and
 rotation segments. `tests/check-core-client.mjs` verifies the real browser
 switch and the no-Core fallback.
+`tests/check-csharp-optimize.mjs` compares the structured artifact optimizer's
+problem text and CSV parser with the JS implementation, including a real merged
+expression and an end-to-end run when `optimize.exe` is built.
+
+The artifact optimiser text protocol now lives in
+`GsPlan.Core.Artifacts.ArtifactOptimizeCalculator`. The browser sends the
+expression coefficients, baseline panel, comparison row and piece shapes to
+`POST /api/optimize/artifact`; C# writes the problem, runs the unchanged C++
+binary, and parses its CSV into named rows. The older `POST /api/optimize`
+text route remains as the Node-server fallback, and `/problem` plus `/parse`
+expose the two halves for parity tests and diagnostics.

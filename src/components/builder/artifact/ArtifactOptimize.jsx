@@ -40,15 +40,15 @@ import {
 } from '../../../lib/artifact';
 import {
   DEFAULT_HIT_SCALE, MAX_ROLLS_PER_LINE, MONO_ORDER, SYMBOL_LABEL, UPGRADES_DEFAULT,
-  allowedSubstatsFor, buildProblem, defaultPieces, emMattersIn, feedingSubstatsFor,
-  impliedHits, importPieces, monoFactors, parseResult, pieceSpec, scalingBasesOf,
-  stripSubstats,
+  allowedSubstatsFor, artifactOptimizeRequest, buildProblem, defaultPieces, emMattersIn,
+  feedingSubstatsFor, impliedHits, importPieces, monoFactors, parseResult, pieceSpec,
+  scalingBasesOf, stripSubstats,
 } from '../../../lib/artifact-optimize';
 import {
   damageAt, evaluate, evaluateAmp, mergedExpression, panelOf, variablesOf,
 } from '../../../lib/merged-expression';
 import { mergedExpressionRequest } from '../../../lib/axis-request';
-import { useCoreMergedExpression } from '../../../lib/core-client';
+import { coreAvailable, useCoreMergedExpression } from '../../../lib/core-client';
 import { SCALING_SYMBOL } from '../../../lib/damage';
 import { StatGlyph, StatMenu } from './StatGlyph';
 
@@ -232,6 +232,49 @@ function OptimizeDialog({ charId, build, optimize, onClose }) {
     setResult(null);
     setElapsed(null);
     try {
+      const ref = curPanel ? variablesOf(curPanel) : null;
+      let structured = null;
+
+      // A structured response is the preferred path: C# writes the problem and
+      // reads the CSV, so the browser no longer owns either half of the protocol.
+      // The old text route stays as the fallback for the Node dev server.
+      if (await coreAvailable()) {
+        try {
+          const res = await fetch('/api/optimize/artifact', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify(artifactOptimizeRequest({
+              expr,
+              panel: basePanel,
+              ref,
+              pieces,
+              hitScale,
+            })),
+          });
+          const type = res.headers.get('content-type') || '';
+          if (res.ok && type.includes('application/json')) {
+            structured = await res.json();
+          } else if (res.status !== 404 && res.status !== 405) {
+            const text = await res.text();
+            let message = text;
+            try { message = JSON.parse(text).error || text; } catch { /* plain text */ }
+            throw new Error(message);
+          }
+        } catch (error) {
+          // A missing/unreachable structured route is a fallback, not an error
+          // banner. A real optimizer failure is rethrown with its message.
+          if (error?.name !== 'TypeError' && error?.name !== 'AbortError') throw error;
+        }
+      }
+
+      if (structured) {
+        setResult({ stats: structured.stats || [], rows: structured.rows || [] });
+        const searchMs = Number(structured.elapsedMs);
+        setElapsed(Number.isFinite(searchMs) && searchMs >= 0 ? searchMs : null);
+        setPage(0);
+        return;
+      }
+
       const problem = buildProblem({
         expr,
         panel: basePanel,
@@ -239,7 +282,7 @@ function OptimizeDialog({ charId, build, optimize, onClose }) {
         // the user actually wears, so it must not be discounted by the roll scale:
         // the scale models UNKNOWN candidate rolls, and applying it here would make
         // the comparison row weaker than the build on screen and inflate every gain.
-        ref: curPanel ? variablesOf(curPanel) : null,
+        ref,
         pieces,
         hitScale,
       });

@@ -288,6 +288,26 @@ export function importPieces(build, { upgrades = UPGRADES_DEFAULT } = {}) {
   });
 }
 
+export function artifactOptimizeRequest({
+  expr, panel, ref = null, pieces, hitScale = DEFAULT_HIT_SCALE,
+}) {
+  return {
+    coeffs: expr?.coeffs ?? {},
+    panel,
+    ref,
+    pieces: (pieces || []).map((piece) => ({
+      slot: piece.slot,
+      lines: piece.lines,
+      rolls: piece.rolls,
+      maxPerLine: piece.maxPerLine,
+      allows: (piece.allows || []).map((allow) => ({
+        key: allow.key,
+        state: allow.state,
+      })),
+    })),
+    hitScale,
+  };
+}
 
 /**
  * The problem file.
