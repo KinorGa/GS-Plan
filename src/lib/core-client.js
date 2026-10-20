@@ -18,6 +18,7 @@ import { computeDamage } from './damage';
 const META_URL = '/api/core/meta';
 const DAMAGE_BATCH_URL = '/api/core/damage-batch';
 const PANEL_BATCH_URL = '/api/core/derive-panel-batch';
+const AXIS_URL = '/api/core/axis';
 const PREFERENCE_KEY = 'gsplan.core';
 const CACHE_LIMIT = 512;
 
@@ -25,10 +26,13 @@ let availability = null;
 let scheduled = false;
 const damageCache = new Map();
 const panelCache = new Map();
+const axisCache = new Map();
 const pendingDamage = new Map();
 const pendingPanels = new Map();
+const pendingAxes = new Map();
 let damageQueue = [];
 let panelQueue = [];
+let axisQueue = [];
 
 const readPreference = () => {
   try {
@@ -64,6 +68,7 @@ export function invalidateCoreClient() {
   availability = null;
   damageCache.clear();
   panelCache.clear();
+  axisCache.clear();
 }
 
 /** Whether the current page is served by a core-capable service. */
@@ -125,13 +130,14 @@ function schedule() {
     scheduled = false;
     flushDamage();
     flushPanels();
+    flushAxes();
   });
 }
 
 function enqueue(kind, request, key) {
-  const cache = kind === 'damage' ? damageCache : panelCache;
-  const pending = kind === 'damage' ? pendingDamage : pendingPanels;
-  const queue = kind === 'damage' ? damageQueue : panelQueue;
+  const cache = kind === 'damage' ? damageCache : kind === 'panel' ? panelCache : axisCache;
+  const pending = kind === 'damage' ? pendingDamage : kind === 'panel' ? pendingPanels : pendingAxes;
+  const queue = kind === 'damage' ? damageQueue : kind === 'panel' ? panelQueue : axisQueue;
 
   if (cache.has(key)) return Promise.resolve(cache.get(key));
   if (pending.has(key)) return pending.get(key);
@@ -142,6 +148,23 @@ function enqueue(kind, request, key) {
   pending.set(key, promise);
   schedule();
   return promise;
+}
+
+async function flushAxes() {
+  const batch = axisQueue;
+  axisQueue = [];
+  if (!batch.length) return;
+  await Promise.all(batch.map(async (item) => {
+    try {
+      const result = await postJson(AXIS_URL, item.request);
+      remember(axisCache, item.key, result);
+      pendingAxes.delete(item.key);
+      item.resolve(result);
+    } catch (error) {
+      pendingAxes.delete(item.key);
+      item.reject(error);
+    }
+  }));
 }
 
 async function flushDamage() {
@@ -236,4 +259,21 @@ export function useCoreDamage(request) {
  */
 export function useCoreDerivedPanel(request, fallback) {
   return useRemoteCore('panel', request, fallback);
+}
+
+/**
+ * Upgrade a whole-axis JS result to the C# result when available. `byId` is a
+ * Map in the JS contract, so the endpoint's object is adapted exactly once.
+ */
+export function useCoreAxis(request, fallback) {
+  const remote = useRemoteCore('axis', request, null);
+  return useMemo(() => {
+    if (!remote) return fallback;
+    return {
+      ...remote,
+      byId: remote.byId instanceof Map
+        ? remote.byId
+        : new Map(Object.entries(remote.byId || {})),
+    };
+  }, [remote, fallback]);
 }

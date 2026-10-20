@@ -1,6 +1,7 @@
 using System.Text.Json;
 using GsPlan.Api.Infrastructure;
 using GsPlan.Api.Services;
+using GsPlan.Core.Axis;
 using GsPlan.Core.Damage;
 using GsPlan.Core.Stats;
 
@@ -48,6 +49,7 @@ public static class CoreEndpoints
             version = 1,
             batchDamage = true,
             batchDerivePanel = true,
+            axis = true,
             maxBatchItems = MaxBatchItems,
         }));
 
@@ -188,6 +190,56 @@ public static class CoreEndpoints
                     results.Add(StatDeriver.DerivePanel(item, item.UseStats ? stats : null));
                 }
                 return ApiResults.Json(context, new { results });
+            }
+            catch (Exception ex)
+            {
+                return ApiResults.Json(context, new { error = ex.Message }, StatusCodes.Status500InternalServerError);
+            }
+        });
+
+        app.MapPost("/api/core/axis", async (HttpContext context, CoreDataCatalog catalog) =>
+        {
+            var body = await ReadBodyAsync(context);
+            if (body.Error is not null) return body.Error;
+
+            AxisRequest? request;
+            try
+            {
+                request = JsonSerializer.Deserialize<AxisRequest>(body.Text!, JsonOptions);
+            }
+            catch (JsonException)
+            {
+                return ApiResults.Json(context, new { error = "body is not JSON" }, StatusCodes.Status400BadRequest);
+            }
+            if (request is null)
+            {
+                return ApiResults.Json(context, new { error = "body is required" }, StatusCodes.Status400BadRequest);
+            }
+            if ((request.Entries?.Count ?? 0) > MaxBatchItems)
+            {
+                return ApiResults.Json(
+                    context,
+                    new { error = $"at most {MaxBatchItems} entries are allowed" },
+                    StatusCodes.Status400BadRequest);
+            }
+
+            try
+            {
+                var lang = string.IsNullOrWhiteSpace(request.Lang) ? "chs" : request.Lang;
+                var team = new Dictionary<string, AxisTeamUnit>(StringComparer.Ordinal);
+                foreach (var unit in request.Team ?? [])
+                {
+                    if (!string.IsNullOrEmpty(unit.Id)) team[unit.Id] = unit;
+                }
+                var result = AxisCalculator.Compute(request, new AxisComputationData
+                {
+                    TeamById = team,
+                    DetailFor = id => catalog.GetCharacterDetail(lang, id),
+                    WeaponFor = catalog.GetWeapon,
+                    TalentDamage = catalog.TalentDamage,
+                    Stats = catalog.Stats,
+                });
+                return ApiResults.Json(context, result);
             }
             catch (Exception ex)
             {

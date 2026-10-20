@@ -27,6 +27,7 @@ builder.Services.AddSingleton(_ => AppPaths.Resolve(options, contentRoot));
 builder.Services.AddSingleton<DataStore>();
 builder.Services.AddSingleton<OptimizerRunner>();
 builder.Services.AddSingleton<StatsCatalog>();
+builder.Services.AddSingleton<CoreDataCatalog>();
 builder.Services.AddHttpClient("vision", (services, client) =>
 {
     var current = services.GetRequiredService<IOptions<GsPlanOptions>>().Value;
@@ -87,6 +88,7 @@ app.Map("/api/core/damage", () => Results.StatusCode(StatusCodes.Status405Method
 app.Map("/api/core/damage-batch", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 app.Map("/api/core/derive-panel", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 app.Map("/api/core/derive-panel-batch", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
+app.Map("/api/core/axis", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 app.Map("/api/core/meta", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 
 app.MapFallback(async context =>

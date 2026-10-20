@@ -52,11 +52,15 @@ published, put `dist/` beside the executable or set `GsPlan:RepoRoot`.
 - `POST /api/core/damage-batch`
 - `POST /api/core/derive-panel`
 - `POST /api/core/derive-panel-batch`
+- `POST /api/core/axis`
 - Static `dist/` files with SPA fallback
 
 `GsPlan.Core` is the C# port of `src/lib/damage.js`, `stat-derive.js`,
-`stat-tables.js`, the artifact main-stat curves and the artifact stat keys. The
-UI reaches it through `src/lib/core-client.js`:
+`stat-tables.js`, the artifact main-stat curves and the artifact stat keys. It
+also owns the whole-axis calculation: the browser sends the axis, each unit's
+build, artifact stats and buff cards, while character details, the weapon
+catalogue and the curated talent-damage table stay on the server. The UI reaches
+it through `src/lib/core-client.js`:
 
 - The page renders the JS result immediately, so a missing service never blocks
   the first paint.
@@ -65,9 +69,14 @@ UI reaches it through `src/lib/core-client.js`:
   and upgrades the rendered numbers when the response arrives.
 - Identical requests are cached and shared. A failed request silently leaves the
   JS result in place.
+- The whole axis is recalculated in one `POST /api/core/axis` request. The JS
+  result is still the synchronous first paint; the C# result replaces it when
+  the response arrives.
 - `localStorage.gsplan.core = 'js'` forces the JS path; `'core'` makes the intent
   explicit; removing the key restores automatic detection.
 
 `tests/check-csharp-core.mjs` compares every single and batch result field with
-the JS implementation, while `tests/check-core-client.mjs` verifies the real
-browser switch and the no-Core fallback.
+the JS implementation. `tests/check-csharp-axis.mjs` compares complete axes,
+entry parts, buff formulas and custom zones against the JS implementation, while
+`tests/check-core-client.mjs` verifies the real browser switch and the no-Core
+fallback.

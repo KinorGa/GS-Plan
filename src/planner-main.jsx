@@ -33,6 +33,8 @@ import AxisSummary from './components/AxisSummary';
 import { useTalentDamage } from './lib/use-talent-damage';
 import { ENTRY_MIME, entriesToJson, entriesToText, parseEntriesJson } from './lib/entry-clipboard';
 import { computeAxis } from './lib/axis-compute';
+import { axisRequest } from './lib/axis-request';
+import { useCoreAxis } from './lib/core-client';
 import { applyBulkSettings, countBulkTargets } from './lib/bulk-apply';
 import { scopeForUnit } from './lib/buff-formula';
 import { activeArtifacts } from './lib/artifact-sets';
@@ -381,10 +383,15 @@ function Page() {
     () => new Map(withDetail.map((t) => [t.id, scopeForUnit(t, catalogue)])),
     [withDetail, catalogue]
   );
-  const axis = useMemo(() => {
+  const jsAxis = useMemo(() => {
     if (!catalogue) return { byId: new Map(), total: 0, perHit: 0, computed: 0, entries: entries.length };
     return computeAxis(entries, withDetail, catalogue, talentDamageTable);
   }, [entries, withDetail, catalogue, talentDamageTable]);
+  const coreAxisRequest = useMemo(
+    () => (catalogue ? axisRequest(entries, team, lang) : null),
+    [entries, team, catalogue, lang]
+  );
+  const axis = useCoreAxis(coreAxisRequest, jsAxis);
 
   /**
    * Everything the artifact optimiser reads, in one stable object.
