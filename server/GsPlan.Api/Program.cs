@@ -77,6 +77,7 @@ app.MapDataEndpoints();
 app.MapOptimizeEndpoints();
 app.MapVisionEndpoints();
 app.MapCoreEndpoints();
+app.MapConfigEndpoints();
 
 // Method mismatches must be 405, not the SPA fallback's 404. These routes have
 // no method constraint, so they only win after the method-specific endpoints
@@ -94,6 +95,8 @@ app.Map("/api/core/derive-panel-batch", () => Results.StatusCode(StatusCodes.Sta
 app.Map("/api/core/axis", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 app.Map("/api/core/merged-expression", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 app.Map("/api/core/meta", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
+app.Map("/api/config/export", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
+app.Map("/api/config/import", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 
 app.MapFallback(async context =>
 {

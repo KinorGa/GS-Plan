@@ -4,7 +4,8 @@ This is the ASP.NET Core replacement for the small Node server in `serve.mjs`.
 It serves the existing `dist/` build and exposes the same `/api/data`,
 `/api/optimize` and `/api/vision` routes. The C++ optimiser is unchanged: the
 service starts `native/optimize/optimize.exe` exactly as the Node server does.
-The pure damage and stat-derivation modules now live in `server/GsPlan.Core`.
+The pure damage and stat-derivation modules, the artifact optimiser protocol and
+the configuration file boundary now live in `server/GsPlan.Core`.
 
 ## Run
 
@@ -43,14 +44,15 @@ published, put `dist/` beside the executable or set `GsPlan:RepoRoot`.
 
 ## Current scope
 
-* `POST /api/optimize/artifact`
-* `POST /api/optimize/artifact/problem`
-* `POST /api/optimize/artifact/parse`
-
 - `GET /api/health`
 - `GET /api/data`, `PUT /api/data`, `POST /api/data`
 - `POST /api/optimize`
+- `POST /api/optimize/artifact`
+- `POST /api/optimize/artifact/problem`
+- `POST /api/optimize/artifact/parse`
 - `GET /api/vision`, `POST /api/vision`
+- `POST /api/config/export`
+- `POST /api/config/import`
 - `GET /api/core/meta`
 - `POST /api/core/damage`
 - `POST /api/core/damage-batch`
@@ -94,6 +96,10 @@ switch and the no-Core fallback.
 `tests/check-csharp-optimize.mjs` compares the structured artifact optimizer's
 problem text and CSV parser with the JS implementation, including a real merged
 expression and an end-to-end run when `optimize.exe` is built.
+`tests/check-csharp-config.mjs` compares both directions of the configuration
+file boundary, including the legacy bare-team document, old artifact builds,
+pool identity, `enemyRes` migration, the real 1.8 MB imported rotation and a
+byte-for-byte pretty-printed export.
 
 The artifact optimiser text protocol now lives in
 `GsPlan.Core.Artifacts.ArtifactOptimizeCalculator`. The browser sends the
@@ -102,3 +108,12 @@ expression coefficients, baseline panel, comparison row and piece shapes to
 binary, and parses its CSV into named rows. The older `POST /api/optimize`
 text route remains as the Node-server fallback, and `/problem` plus `/parse`
 expose the two halves for parity tests and diagnostics.
+
+The configuration file boundary is now owned by
+`GsPlan.Core.Config.ConfigDocument`. `POST /api/config/export` applies team,
+artifact-container and axis normalisation, pools repeated descriptors and
+returns the same pretty-printed text as `buildConfigFile`; `/import` expands
+pools, applies the legacy migrations and returns the same `{ team, axes,
+activeId, teamOnly }` object as `parseConfigFile`. The import dialog uses this
+route when `/api/core/meta` advertises `configTransfer`, and falls back to the
+in-browser implementation on the Node development server.

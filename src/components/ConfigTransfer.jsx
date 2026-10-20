@@ -29,7 +29,8 @@
 import { useRef, useState } from 'react';
 import { useI18n } from '../i18n';
 import { useTeam } from '../lib/team-context';
-import { buildConfigFile, configFilename, describeImport, parseConfigFile } from '../lib/config-file';
+import { configFilename, describeImport } from '../lib/config-file';
+import { exportConfigText, parseConfigText } from '../lib/config-client';
 import AppDialog from './AppDialog';
 /**
  * The two kinds of file 导入 accepts.
@@ -73,12 +74,21 @@ export default function ConfigTransfer({ axes, onReplaceAxes, onClearAxes }) {
   const axisCount = axes?.axes?.length || 0;
   const entryCount = (axes?.axes || []).reduce((n, a) => n + (a.entries?.length || 0), 0);
 
-  const download = () => {
-    const text = buildConfigFile({
-      team: { units },
-      axes: axes?.axes,
-      activeId: axes?.activeId,
-    });
+  const download = async () => {
+    setBusy(true);
+    let text;
+    try {
+      text = await exportConfigText({
+        team: { units },
+        axes: axes?.axes,
+        activeId: axes?.activeId,
+      });
+    } catch (err) {
+      setStatus({ kind: 'error', text: err.message });
+      return;
+    } finally {
+      setBusy(false);
+    }
     const blob = new Blob([text], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
 
@@ -135,7 +145,7 @@ export default function ConfigTransfer({ axes, onReplaceAxes, onClearAxes }) {
     try {
       parsed = mode === 'gcsim'
         ? await parseGcsim(file)
-        : parseConfigFile(await file.text());
+        : await parseConfigText(await file.text());
     } catch (err) {
       setStatus({ kind: 'error', text: err.message });
       return;
@@ -207,7 +217,7 @@ export default function ConfigTransfer({ axes, onReplaceAxes, onClearAxes }) {
         {L({ chs: '配置数据', en: 'Configuration' })}
       </span>
 
-      <TransferButton onClick={download} disabled={empty} data-export>
+      <TransferButton onClick={download} disabled={empty || busy} data-export>
         {L({ chs: '导出 JSON', en: 'Export JSON' })}
       </TransferButton>
 

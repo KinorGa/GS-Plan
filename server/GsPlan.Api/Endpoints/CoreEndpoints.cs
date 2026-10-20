@@ -52,6 +52,7 @@ public static class CoreEndpoints
             axis = true,
             mergedExpression = true,
             artifactOptimize = true,
+            configTransfer = true,
             maxBatchItems = MaxBatchItems,
         }));
 
