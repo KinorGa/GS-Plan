@@ -8,16 +8,31 @@ public sealed class DamageSource
 {
     public string Key { get; init; } = string.Empty;
     public string Kind { get; init; } = string.Empty;
+    public string? Icon { get; init; }
+    public bool IncludeIcon { get; init; }
+    public string? IconKind { get; init; }
+    public string? Chs { get; init; }
+    public string? En { get; init; }
     public string? Element { get; init; }
     public List<DamageStageData> Stages { get; init; } = [];
 }
 
 public sealed class DamageStageData
 {
+    public string? Chs { get; init; }
+    public string? En { get; init; }
     public double Mult { get; init; }
     public double Hits { get; init; }
+    public List<DamageMultiplierTerm>? Terms { get; init; }
     public string? Basis { get; init; }
+    public bool IncludeBasis { get; init; }
     public List<DamageMultiplierPart>? Parts { get; init; }
+}
+
+public sealed class DamageMultiplierTerm
+{
+    public double Mult { get; init; }
+    public int Hits { get; init; }
 }
 
 public sealed class DamageMultiplierPart
@@ -83,6 +98,19 @@ public static partial class CharacterSources
             var level = talentLevels is not null && talentLevels.TryGetValue(kind, out var configured)
                 ? configured
                 : 10;
+            var skillName = skill.TryGetProperty("name", out var nameValue)
+                && nameValue.ValueKind == JsonValueKind.String
+                    ? nameValue.GetString()
+                    : null;
+            var hasIcon = skill.TryGetProperty("icon", out var iconValue)
+                && iconValue.ValueKind == JsonValueKind.String;
+            var icon = hasIcon ? iconValue.GetString() : null;
+            var (chsLabel, enLabel) = kind switch
+            {
+                "normal" => ("普通攻击", "Normal Attack"),
+                "skill" => ("元素战技", "Elemental Skill"),
+                _ => ("元素爆发", "Elemental Burst"),
+            };
             var stages = new List<DamageStageData>();
             foreach (var property in multipliers.EnumerateObject())
             {
@@ -100,8 +128,15 @@ public static partial class CharacterSources
 
                 stages.Add(new DamageStageData
                 {
+                    Chs = property.Name,
+                    En = property.Name,
                     Mult = terms[0].Mult,
                     Hits = hits,
+                    Terms = terms.Select(term => new DamageMultiplierTerm
+                    {
+                        Mult = term.Mult,
+                        Hits = term.Hits,
+                    }).ToList(),
                     Parts = expanded.Count > 1
                         ? expanded.Select((part, index) => new DamageMultiplierPart
                         {
@@ -118,6 +153,10 @@ public static partial class CharacterSources
             {
                 Key = key,
                 Kind = kind,
+                Icon = icon,
+                IncludeIcon = hasIcon,
+                Chs = chsLabel + "·" + (skillName ?? string.Empty),
+                En = enLabel + ": " + (skillName ?? string.Empty),
                 Element = kind == "normal" ? NormalAttackElement(detail, element) : element,
                 Stages = stages,
             });
@@ -187,19 +226,56 @@ public static partial class CharacterSources
                 ? hitNumber
                 : 1;
 
-            _ = sourceData; // Names/icons are display-only and not needed by the formula.
+            var sourceName = sourceData.ValueKind == JsonValueKind.Object
+                && sourceData.TryGetProperty("name", out var sourceNameValue)
+                && sourceNameValue.ValueKind == JsonValueKind.String
+                && !string.IsNullOrEmpty(sourceNameValue.GetString())
+                    ? sourceNameValue.GetString()
+                    : entry.TryGetProperty("name", out var entryNameValue)
+                        && entryNameValue.ValueKind == JsonValueKind.String
+                        && !string.IsNullOrEmpty(entryNameValue.GetString())
+                            ? entryNameValue.GetString()
+                            : property.Name;
+            var sourceIcon = sourceData.ValueKind == JsonValueKind.Object
+                && sourceData.TryGetProperty("icon", out var sourceIconValue)
+                && sourceIconValue.ValueKind == JsonValueKind.String
+                && !string.IsNullOrEmpty(sourceIconValue.GetString())
+                    ? sourceIconValue.GetString()
+                    : entry.TryGetProperty("icon", out var entryIconValue)
+                        && entryIconValue.ValueKind == JsonValueKind.String
+                        && !string.IsNullOrEmpty(entryIconValue.GetString())
+                            ? entryIconValue.GetString()
+                            : null;
+            var constellationNumber = slot.Kind == "constellation"
+                && ConstellationSlot().Match(property.Name) is { Success: true } match
+                    ? match.Groups[1].Value
+                    : null;
+            var chs = slot.Kind == "constellation"
+                ? $"命之座 {constellationNumber}·{sourceName}"
+                : $"固有天赋·{sourceName}";
+            var en = slot.Kind == "constellation"
+                ? $"Constellation {constellationNumber}: {sourceName}"
+                : $"Passive: {sourceName}";
             yield return new DamageSource
             {
                 Key = property.Name,
                 Kind = slot.Kind,
+                Icon = sourceIcon,
+                IncludeIcon = true,
+                Chs = chs,
+                En = en,
                 Element = FirstNonEmpty(configuredElement, element),
                 Stages =
                 [
                     new DamageStageData
                     {
+                        Chs = string.IsNullOrEmpty(basis) ? "伤害" : basis + "倍率伤害",
+                        En = string.IsNullOrEmpty(basis) ? "DMG" : basis + " Scaling DMG",
                         Mult = mult,
                         Hits = hits,
+                        Terms = null,
                         Basis = string.IsNullOrEmpty(basis) ? null : basis,
+                        IncludeBasis = true,
                         Parts = null,
                     },
                 ],
@@ -215,14 +291,39 @@ public static partial class CharacterSources
             {
                 Key = "flatdmg-" + type.ToLowerInvariant(),
                 Kind = "flat",
+                Icon = null,
+                IncludeIcon = true,
+                IconKind = "element",
+                Chs = "附伤·" + (type == "Physical" ? "物理" : FlatTypeZh(type)),
+                En = "Additional DMG: " + type,
                 Element = type,
                 Stages =
                 [
-                    new DamageStageData { Mult = 1, Hits = 1, Parts = null },
+                    new DamageStageData
+                    {
+                        Chs = "附伤",
+                        En = "Additional DMG",
+                        Mult = 1,
+                        Hits = 1,
+                        Terms = [new DamageMultiplierTerm { Mult = 1, Hits = 1 }],
+                        Parts = null,
+                    },
                 ],
             };
         }
     }
+
+    private static string FlatTypeZh(string type) => type switch
+    {
+        "Pyro" => "火",
+        "Hydro" => "水",
+        "Cryo" => "冰",
+        "Electro" => "雷",
+        "Anemo" => "风",
+        "Geo" => "岩",
+        "Dendro" => "草",
+        _ => type,
+    };
 
     private static string? NormalAttackElement(JsonElement detail, string? element)
     {

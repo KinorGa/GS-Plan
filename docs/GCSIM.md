@@ -18,10 +18,10 @@ node scripts/gcsim-import.mjs --help    # 见脚本头部：--sample / --out / -
 规则见 [DEV.md](./DEV.md) 的 `axes-pool.js`。
 
 **不经过命令行也行。** 规划器右上角「导入」旁边多了模式选择，切到 `gcsim` 后直接选
-`serve_sample.json.gz`，页面里解压、加载数据集、跑导入，确认框会先报「映射了多少击 / 有多少没映射」。
-页面跑的是**同一个导入函数**（`src/lib/gcsim-import.js`，`scripts/gcsim-import.mjs` 只是它的命令行薄壳），
-需要的数据集也全是规划器本来就加载并缓存的那几份（目录、圣遗物套装、角色详情、天赋伤害表），
-只多一次 5 KB 的 `gcsim-abilities.json`。所以两条路产出的文件是同一份——可以逐行对拍。
+`serve_sample.json.gz`，确认框会先报「映射了多少击 / 有多少没映射」。页面优先把原始字节 POST 给
+C# 的 `/api/gcsim/import`（与 `GsPlan.Core` 的导入器共用同一份数据目录）；纯 Node 开发服务器或接口不可用时，
+`src/lib/gcsim-client.js` 会退回 `src/lib/gcsim-import.js`，`scripts/gcsim-import.mjs` 则是同一份 JS 实现的命令行薄壳。
+C# 是它的移植版，`tests/check-csharp-gcsim.mjs` 对 `doc` / `report` 逐字段对拍；两条路产出的文件是同一份。
 
 > 注意页面跑的是 `dist/` 的**打包产物**，不是 `src/`：改了 `src/` 或 `public/data/` 之后先
 > `node build.mjs` 再看页面，否则浏览器里还是修复前的旧代码——修好了导入却在页面上看到旧值，

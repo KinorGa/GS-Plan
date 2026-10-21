@@ -122,7 +122,7 @@ export default function ConfigTransfer({ axes, onReplaceAxes, onClearAxes }) {
    * the rotation will not have, and that is not something to discover later.
    */
   const parseGcsim = async (file) => {
-    const { importGcsimSample } = await import('../lib/gcsim-sample');
+    const { importGcsimSample } = await import('../lib/gcsim-client');
     const { doc, report } = await importGcsimSample(await file.arrayBuffer(), lang);
     return {
       team: doc.team,

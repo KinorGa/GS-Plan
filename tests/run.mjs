@@ -78,6 +78,16 @@ const FIXTURES = {
   'check-csharp-config.mjs': [
     'server/GsPlan.Api/bin/Debug/net8.0/GsPlan.Api.dll',
   ],
+  'check-csharp-gcsim.mjs': [
+    'public/data/charlist.json',
+    'public/data/weaponlist.json',
+    'public/data/artifactlist.json',
+    'public/data/stats-compact.json',
+    'public/data/char/chs/10000128.json',
+    'public/data/artifact/chs/15044.json',
+    'public/data/talent-damage.json',
+    'server/GsPlan.Api/bin/Debug/net8.0/GsPlan.Api.dll',
+  ],
   'check-core-client.mjs': ['data/lunaris-config-2026-10-07.json'],
   'check-child-notes.mjs': ['data/法布尼-ft.json'],
   'check-derive-precise.mjs': ['public/data/char/chs/10000343.json'],

@@ -53,6 +53,7 @@ public static class CoreEndpoints
             mergedExpression = true,
             artifactOptimize = true,
             configTransfer = true,
+            gcsimImport = true,
             maxBatchItems = MaxBatchItems,
         }));
 

@@ -15,6 +15,8 @@ public sealed class CoreDataCatalog
     private readonly StatsCatalog _stats;
     private readonly object _gate = new();
     private readonly Dictionary<string, JsonElement?> _details = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, JsonElement?> _artifactDetails = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, JsonElement?> _lists = new(StringComparer.Ordinal);
     private JsonElement? _weapons;
     private bool _weaponsLoaded;
     private JsonElement? _talentDamage;
@@ -27,6 +29,14 @@ public sealed class CoreDataCatalog
     }
 
     public StatsCompact Stats => _stats.Get();
+
+    public JsonElement? GcsimMapping => GetList("gcsim-abilities.json");
+
+    public JsonElement? CharacterCatalogue => GetList("charlist.json");
+
+    public JsonElement? WeaponCatalogue => GetList("weaponlist.json");
+
+    public JsonElement? ArtifactCatalogue => GetList("artifactlist.json");
 
     public JsonElement? GetCharacterDetail(string lang, string id)
     {
@@ -50,6 +60,31 @@ public sealed class CoreDataCatalog
             && value.TryGetProperty(id, out var weapon)
             ? weapon.Clone()
             : null;
+    }
+
+    public JsonElement? GetArtifactDetail(string lang, string id)
+    {
+        if (!SafeSegment(lang) || !SafeSegment(id)) return null;
+        var key = lang + "/" + id;
+        lock (_gate)
+        {
+            if (_artifactDetails.TryGetValue(key, out var cached)) return cached;
+            var path = Path.Combine(_publicData, "artifact", lang, id + ".json");
+            var value = ReadJson(path);
+            _artifactDetails[key] = value;
+            return value;
+        }
+    }
+
+    private JsonElement? GetList(string name)
+    {
+        lock (_gate)
+        {
+            if (_lists.TryGetValue(name, out var cached)) return cached;
+            var value = ReadJson(Path.Combine(_publicData, name));
+            _lists[name] = value;
+            return value;
+        }
     }
 
     public JsonElement? TalentDamage

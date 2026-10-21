@@ -14,4 +14,11 @@ public static class RequestBody
             leaveOpen: true);
         return await reader.ReadToEndAsync(cancellationToken);
     }
+
+    public static async Task<byte[]> ReadBytesAsync(HttpRequest request, CancellationToken cancellationToken)
+    {
+        using var buffer = new MemoryStream();
+        await request.Body.CopyToAsync(buffer, cancellationToken);
+        return buffer.ToArray();
+    }
 }

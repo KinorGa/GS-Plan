@@ -138,8 +138,9 @@ README 只讲规划器（`planner.html`）；这份文档讲**整个仓库里都
   - `data-file.js` — `buffs.html` 的磁盘文件（File System Access API），退化时只用 localStorage。
   - `config-file.js`（`CONFIG_KIND='lunaris-config'`、`CONFIG_VERSION`）、`json-cache.js`。
   - `gcsim-import.js` — gcsim 日志 -> `lunaris-config`，**纯函数**：日志/对照表/目录/角色详情/天赋表都是参数。
-    命令行（`scripts/gcsim-import.mjs`）和规划器的 `gcsim` 导入模式跑的是同一个它，见 `docs/GCSIM.md`。
+    命令行（`scripts/gcsim-import.mjs`）跑它；规划器优先走 C# 的同名导入器，接口不可用时退回它，见 `docs/GCSIM.md`。
   - `gcsim-sample.js` — 页面侧接线：解压 `.gz`/zlib、复用规划器已有的目录与详情缓存、调 `gcsim-import.js`。
+  - `gcsim-client.js` — 页面到 C# `/api/gcsim/import` 的边界：4xx 原样报错，404/405/网络/5xx 退回上面的浏览器实现。
   - `axes-pool.js` — **文件边界上的去重**：把整份配置里重复的*描述符*收进 `pools`，行里只留
     `sourceRef` / `buffRefs` / `summary.sourceLabelRef`。池的键是**整个对象**，所以
     `atkPct=25` 和 `atkPct=18` 是两条增益（按 key 去重会把它们并成一条，静悄悄地算错伤害）。
