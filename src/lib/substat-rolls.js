@@ -175,10 +175,14 @@ export function asNumber(value) {
  * 209.13 resolve to the same entry.
  */
 export function matchLegal(statKey, rarity, value) {
+  return findLegal(legalTotals(statKey, rarity), value);
+}
+
+/** Find the entry in an already-resolved table that matches a typed value. */
+export function findLegal(entries, value) {
   const n = asNumber(value);
   if (n == null) return null;
-  return (legalTotals(statKey, rarity) || [])
-    .find((e) => Math.abs(n - e.value) <= MATCH_TOL) || null;
+  return (entries || []).find((e) => Math.abs(n - e.value) <= MATCH_TOL) || null;
 }
 
 /** Whether a value is one the game can show for this stat at this rarity. */

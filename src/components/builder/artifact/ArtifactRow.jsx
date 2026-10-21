@@ -1,11 +1,13 @@
 // The artifact row: one panel holding five individually configured slots.
 
+import { useMemo } from 'react';
 import { qualityOf } from '../../../game';
 import { useI18n } from '../../../i18n';
 import {
-  SLOTS, activeBonuses, dominantSetOf, useArtifacts, withPiece,
+  SLOTS, activeBonuses, artifactStatTotals, countBySet, dominantSetOf, useArtifacts, withPiece,
 } from '../../../lib/artifact';
 import { activeArtifacts, normaliseArtifacts, setArtifactSlots } from '../../../lib/artifact-sets';
+import { useArtifactSummary } from '../../../lib/artifact-summary-client';
 import PieceSlot from './PieceSlot';
 import BonusChips from './BonusChips';
 import ArtifactSetTabs from './ArtifactSetTabs';
@@ -42,7 +44,13 @@ export default function ArtifactRow({ value, onChange, onRemove, charId, optimiz
   // container, and `activeArtifacts` resolves which build is in use.
   const artifacts = normaliseArtifacts(value);
   const build = activeArtifacts({ artifacts }) || {};
-  const bonuses = activeBonuses(build);
+  const jsSummary = useMemo(() => ({
+    totals: artifactStatTotals(build),
+    counts: countBySet(build),
+    bonuses: activeBonuses(build),
+  }), [build]);
+  const summary = useArtifactSummary(build, jsSummary);
+  const bonuses = summary.bonuses;
 
   // The accent follows whichever set holds the most slots, so the panel takes
   // on the colour of the build rather than an arbitrary one.
@@ -138,7 +146,7 @@ export default function ArtifactRow({ value, onChange, onRemove, charId, optimiz
               onChange={(next) => patchSlot(s.key, next)}
             />
           ))}
-          <ArtifactTotals build={build} />
+          <ArtifactTotals build={build} totals={summary.totals} />
           {/* READ A SCREENSHOT INTO THE ROW. Last in the flex track, in the empty
               width the totals panel leaves: the row is where a build is entered,
               and entering one by eye off a screenshot is the slow path. It writes

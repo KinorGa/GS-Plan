@@ -300,7 +300,11 @@ public static class MergedExpressionCalculator
         };
     }
 
-    private static Dictionary<string, double> VariablesOf(IReadOnlyDictionary<string, double> panel)
+    /// <summary>
+    /// Convert a flat panel into the ten symbols the merged polynomial uses.
+    /// Shared by the expression builder and the evaluation endpoint.
+    /// </summary>
+    public static Dictionary<string, double> VariablesOf(IReadOnlyDictionary<string, double> panel)
         => new(StringComparer.Ordinal)
         {
             ["A"] = TotalAtkOf(panel),

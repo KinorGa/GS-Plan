@@ -219,6 +219,15 @@ export function panelOf(team, catalogue, charId, artifacts) {
     artifacts: artifacts ?? unit.artifacts,
     stats: catalogue?.stats,
   }).values;
+  return panelFromValues(values);
+}
+
+/**
+ * The narrow panel shape the polynomial reads, from a full derived panel.
+ * Exported so the C# derive-panel result can be adapted with the same projection.
+ */
+export function panelFromValues(values) {
+  if (!values) return null;
   return {
     atk: values.atk,
     atkPct: values.atkPct,

@@ -40,6 +40,7 @@ public sealed class PanelNote
 
 public sealed class ArtifactPiece
 {
+    public string? SetId { get; set; }
     public string? MainStat { get; set; }
     public double? Level { get; set; }
     public List<ArtifactSubStat>? SubStats { get; set; }

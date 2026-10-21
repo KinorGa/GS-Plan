@@ -195,6 +195,31 @@ public static class OptimizeEndpoints
             }
         });
 
+        app.MapPost("/api/optimize/artifact/plan", async (HttpContext context) =>
+        {
+            var (request, error) = await ReadJsonAsync<ArtifactPlanRequest>(context);
+            if (error is not null) return error;
+            if (request?.Expr is null)
+            {
+                return ApiResults.Json(context, new { error = "expr is required" }, StatusCodes.Status400BadRequest);
+            }
+
+            try
+            {
+                var plan = ArtifactOptimizePlanner.Plan(request);
+                context.Response.Headers.CacheControl = "no-store";
+                return ApiResults.Json(context, plan);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return ApiResults.Json(context, new { error = ex.Message }, StatusCodes.Status400BadRequest);
+            }
+            catch (Exception ex)
+            {
+                return ApiResults.Json(context, new { error = ex.Message }, StatusCodes.Status500InternalServerError);
+            }
+        });
+
         return app;
     }
 

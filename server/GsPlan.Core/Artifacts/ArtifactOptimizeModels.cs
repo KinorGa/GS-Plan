@@ -61,6 +61,9 @@ public sealed class ArtifactRef
 public sealed class ArtifactPieceSpec
 {
     public string Slot { get; set; } = string.Empty;
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? MainStat { get; set; }
     public int Lines { get; set; }
     public int Rolls { get; set; }
     public int MaxPerLine { get; set; }

@@ -65,3 +65,37 @@ public sealed class MergedWarning
     public List<string>? Keys { get; init; }
     public string? Detail { get; init; }
 }
+
+/// <summary>
+/// Evaluate an already-built merged expression at one panel. The expression is
+/// the object returned by <c>POST /api/core/merged-expression</c>; the panel is
+/// the same flat panel shape the axis and artifact planner use.
+/// </summary>
+public sealed class MergedEvaluationRequest
+{
+    public MergedExpressionResult? Expr { get; set; }
+    public Dictionary<string, double>? Panel { get; set; }
+
+    /// <summary>Optional pre-computed variables; takes precedence over <see cref="Panel"/>.</summary>
+    public Dictionary<string, double>? Variables { get; set; }
+}
+
+public sealed class MergedEvaluationResult
+{
+    public Dictionary<string, double> Variables { get; init; } = new(StringComparer.Ordinal);
+    public double Never { get; init; }
+    public double Crit { get; init; }
+    public double Avg { get; init; }
+    public List<MergedAverageEvaluation> Groups { get; init; } = [];
+}
+
+/// <summary>One crit-rate-buff group evaluated at the request's panel.</summary>
+public sealed class MergedAverageEvaluation
+{
+    public double CrBuff { get; init; }
+    public double Mu { get; init; }
+    public double Delta { get; init; }
+    public double Amp { get; init; }
+    public double Df { get; init; }
+    public double Contrib { get; init; }
+}

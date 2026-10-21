@@ -96,6 +96,9 @@ const FIXTURES = {
   'check-csharp-formula.mjs': [
     'server/GsPlan.Api/bin/Debug/net8.0/GsPlan.Api.dll',
   ],
+  'check-csharp-artifact-tools.mjs': [
+    'server/GsPlan.Api/bin/Debug/net8.0/GsPlan.Api.dll',
+  ],
   'check-core-client.mjs': ['data/lunaris-config-2026-10-07.json'],
   'check-child-notes.mjs': ['data/法布尼-ft.json'],
   'check-derive-precise.mjs': ['public/data/char/chs/10000343.json'],

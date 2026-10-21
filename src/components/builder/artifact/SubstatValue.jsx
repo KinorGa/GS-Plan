@@ -24,8 +24,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useI18n } from '../../../i18n';
 import {
-  DEFAULT_RARITY, SUBSTAT_MAX_ROLLS, legalTotals, matchLegal, rollCountsOf,
+  DEFAULT_RARITY, SUBSTAT_MAX_ROLLS, findLegal, legalTotals, rollCountsOf,
 } from '../../../lib/substat-rolls';
+import { useSubstatTable } from '../../../lib/substat-rolls-client';
 
 /** `3` -> `3次`. */
 const timesWord = (n) => `${n}次`;
@@ -44,14 +45,15 @@ export default function SubstatValueControl({ statKey, rarity = DEFAULT_RARITY, 
   const menuRef = useRef(null);
   const [rect, setRect] = useState(null);
 
-  const entries = legalTotals(statKey, rarity) || [];
-  const match = matchLegal(statKey, rarity, value);
+  const remoteTable = useSubstatTable(rarity);
+  const entries = remoteTable?.stats?.[statKey]?.totals || legalTotals(statKey, rarity) || [];
+  const match = findLegal(entries, value);
   // A typed value the game cannot show. Blank input is not "illegal", it is just
   // unfinished, so it does not get flagged.
   const typed = String(value ?? '').trim() !== '';
   const illegal = typed && !match;
 
-  const maxN = SUBSTAT_MAX_ROLLS[rarity] ?? 6;
+  const maxN = remoteTable?.maxRolls ?? SUBSTAT_MAX_ROLLS[rarity] ?? 6;
 
   /** Every total reachable with EXACTLY `n` rolls, ascending. */
   const byN = useMemo(() => {

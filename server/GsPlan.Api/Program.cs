@@ -89,6 +89,7 @@ app.Map("/api/optimize", () => Results.StatusCode(StatusCodes.Status405MethodNot
 app.Map("/api/optimize/artifact", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 app.Map("/api/optimize/artifact/problem", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 app.Map("/api/optimize/artifact/parse", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
+app.Map("/api/optimize/artifact/plan", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 app.Map("/api/vision", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 app.Map("/api/core/damage", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 app.Map("/api/core/damage-batch", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
@@ -96,12 +97,15 @@ app.Map("/api/core/derive-panel", () => Results.StatusCode(StatusCodes.Status405
 app.Map("/api/core/derive-panel-batch", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 app.Map("/api/core/axis", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 app.Map("/api/core/merged-expression", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
+app.Map("/api/core/merged-evaluate", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
+app.Map("/api/core/substat-rolls", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 app.Map("/api/core/meta", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 app.Map("/api/config/export", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 app.Map("/api/config/import", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 app.Map("/api/gcsim/import", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 app.Map("/api/artifact/scan", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 app.Map("/api/core/formula", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
+app.Map("/api/core/artifact-summary", () => Results.StatusCode(StatusCodes.Status405MethodNotAllowed));
 
 app.MapFallback(async context =>
 {

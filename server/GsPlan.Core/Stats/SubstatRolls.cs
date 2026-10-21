@@ -15,7 +15,7 @@ public static class SubstatRolls
     };
 
     private static readonly object LegalGate = new();
-    private static readonly Dictionary<(int Rarity, string Key), double[]?> LegalCache = new();
+    private static readonly Dictionary<(int Rarity, string Key), IReadOnlyList<SubstatRollTotal>?> TotalCache = new();
 
     private static readonly Dictionary<int, Dictionary<string, double>> Units = new()
     {
@@ -59,47 +59,91 @@ public static class SubstatRolls
     /// up to the rarity's roll cap.
     /// </summary>
     public static IReadOnlyList<double>? LegalValues(string? key, int rarity = DefaultRarity)
+        => Totals(key, rarity)?.Select(total => total.Value).ToArray();
+
+    /// <summary>Every stat key the game can roll at this rarity, in table order.</summary>
+    public static IReadOnlyList<string> KeysFor(int rarity = DefaultRarity)
+        => Units.TryGetValue(rarity, out var units) ? units.Keys.ToArray() : [];
+
+    /// <summary>
+    /// Every reachable total and its exact tier decompositions, ascending.
+    /// This is the shared implementation behind both the editor picker and the
+    /// screenshot validator.
+    /// </summary>
+    public static IReadOnlyList<SubstatRollTotal>? Totals(string? key, int rarity = DefaultRarity)
     {
         if (string.IsNullOrEmpty(key)) return null;
         lock (LegalGate)
         {
-            if (LegalCache.TryGetValue((rarity, key), out var cached)) return cached;
+            if (TotalCache.TryGetValue((rarity, key), out var cached)) return cached;
             if (!Units.TryGetValue(rarity, out var units) || !units.TryGetValue(key, out var unit))
             {
-                LegalCache[(rarity, key)] = null;
+                TotalCache[(rarity, key)] = null;
                 return null;
             }
-            var values = new HashSet<double>();
-            var tiers = new List<int>();
             var maxRolls = MaxRolls.GetValueOrDefault(rarity, 6);
-            for (var rolls = 1; rolls <= maxRolls; rolls++)
-            {
-                Walk(0, rolls, tiers, unit, values);
-            }
-            var list = values.OrderBy(value => value).ToArray();
-            LegalCache[(rarity, key)] = list;
-            return list;
+            var totals = BuildTotals(unit, maxRolls);
+            TotalCache[(rarity, key)] = totals;
+            return totals;
         }
     }
 
-    private static void Walk(
+    /// <summary>The exact value of each of the four tiers, low tier first.</summary>
+    public static IReadOnlyList<double>? TierValues(string? key, int rarity = DefaultRarity)
+        => Units.TryGetValue(rarity, out var units) && !string.IsNullOrEmpty(key)
+            && units.TryGetValue(key, out var unit)
+            ? Enumerable.Range(0, 4).Select(tier => Round3(unit * (7 + tier))).ToArray()
+            : null;
+
+    public static int MaxRollsFor(int rarity = DefaultRarity)
+        => MaxRolls.GetValueOrDefault(rarity, 6);
+
+    private static IReadOnlyList<SubstatRollTotal> BuildTotals(double unit, int maxRolls)
+    {
+        var byM = new SortedDictionary<int, SubstatRollTotal>();
+        var tiers = new List<int>();
+        for (var rolls = 1; rolls <= maxRolls; rolls++)
+        {
+            WalkTotals(0, rolls, rolls, tiers, unit, byM);
+        }
+        return byM.Values.ToArray();
+    }
+
+    private static void WalkTotals(
         int start,
         int left,
+        int totalRolls,
         List<int> tiers,
         double unit,
-        HashSet<double> values)
+        SortedDictionary<int, SubstatRollTotal> byM)
     {
         if (left == 0)
         {
-            var sum = tiers.Sum(tier => tier);
-            values.Add(Math.Floor(unit * sum * 1000 + 0.5) / 1000);
+            var multiplier = tiers.Sum(tier => tier + 7);
+            if (!byM.TryGetValue(multiplier, out var total))
+            {
+                total = new SubstatRollTotal
+                {
+                    M = multiplier,
+                    Value = Round3(unit * multiplier),
+                };
+                byM[multiplier] = total;
+            }
+            total.Entries.Add(new SubstatRollWay
+            {
+                N = totalRolls,
+                Tiers = tiers.Select(tier => tier + 1).ToList(),
+            });
             return;
         }
         for (var tier = start; tier <= 3; tier++)
         {
-            tiers.Add(7 + tier);
-            Walk(tier, left - 1, tiers, unit, values);
+            tiers.Add(tier);
+            WalkTotals(tier, left - 1, totalRolls, tiers, unit, byM);
             tiers.RemoveAt(tiers.Count - 1);
         }
     }
+
+    private static double Round3(double value)
+        => Math.Floor(value * 1000 + 0.5) / 1000;
 }

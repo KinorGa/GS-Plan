@@ -117,7 +117,8 @@ README 只讲规划器（`planner.html`）；这份文档讲**整个仓库里都
   - `rotation-segment.js` — 循环容器：合并/展开/扁平化（`Segment.flatten`）。
   - `team-model.js`、`team-context.jsx` — 队伍模型与 Context（写 `lunaris-team`）。
   - `artifact-model.js`/`artifact-curves.js`/`artifact-sets.js`/`artifact-catalogue.js`/`artifact-meta.js`/`artifact.js` — 圣遗物模型、词条曲线、套装、目录、元数据。
-  - `substat-rolls.js` — 副词条合法取值（高精度，按强化次数 N 分组）。
+  - `substat-rolls.js` — 副词条合法取值（高精度，按强化次数 N 分组）。权威枚举在 C# 的
+    `/api/core/substat-rolls`；这里保留同步首屏与 Node 开发服务器兜底。
   - `elements.js` — `DAMAGE_TYPES`/`KEY_SUFFIX`。
 - **识图（截图 → 圣遗物）**
   - `artifact-scan.js` — 纯函数：提示词、模型返回的容错解析，以及**「图上的字 → 本项目的 key」**的映射
@@ -143,6 +144,10 @@ README 只讲规划器（`planner.html`）；这份文档讲**整个仓库里都
     命令行（`scripts/gcsim-import.mjs`）跑它；规划器优先走 C# 的同名导入器，接口不可用时退回它，见 `docs/GCSIM.md`。
   - `gcsim-sample.js` — 页面侧接线：解压 `.gz`/zlib、复用规划器已有的目录与详情缓存、调 `gcsim-import.js`。
   - `gcsim-client.js` — 页面到 C# `/api/gcsim/import` 的边界：4xx 原样报错，404/405/网络/5xx 退回上面的浏览器实现。
+  - `artifact-summary-client.js` — 圣遗物合计/套装计数到 C# `/api/core/artifact-summary` 的边界。
+  - `artifact-plan-client.js` — 优化器预规划到 C# `/api/optimize/artifact/plan` 的边界：部件形状、喂词条、隐含命中数都由服务端给出。
+  - `merged-evaluate-client.js` — 合并多项式到 C# `/api/core/merged-evaluate` 的边界：面板变量、never/crit/avg 与每个 ΔR 分组贡献由服务端计算。
+  - `substat-rolls-client.js` — 合法副词条表到 C# `/api/core/substat-rolls` 的边界；同一稀有度的所有词条表只请求一次并缓存。
   - `axes-pool.js` — **文件边界上的去重**：把整份配置里重复的*描述符*收进 `pools`，行里只留
     `sourceRef` / `buffRefs` / `summary.sourceLabelRef`。池的键是**整个对象**，所以
     `atkPct=25` 和 `atkPct=18` 是两条增益（按 key 去重会把它们并成一条，静悄悄地算错伤害）。
@@ -173,7 +178,26 @@ README 只讲规划器（`planner.html`）；这份文档讲**整个仓库里都
 
 ---
 
-## 4. 改代码时必须守住的不变量
+## 4. C# 计算边界
+
+**原则：C# 拥有计算，React 拥有状态、交互与渲染。** 浏览器里的同名 JS 函数只负责同步首屏和纯 Node 开发服务器兜底；页面有 C# 服务时，服务端结果会替换首屏值，而不是两套结果长期并存。
+
+| 计算 | C# 入口 | 浏览器适配 |
+| --- | --- | --- |
+| 单条/整轴伤害、面板推导、增益公式 | `/api/core/damage*`、`/api/core/axis`、`/api/core/derive-panel*`、`/api/core/formula` | `core-client.js` |
+| 角色合并多项式 | `/api/core/merged-expression` | `core-client.js` |
+| 多项式在当前面板求值 | `/api/core/merged-evaluate` | `merged-evaluate-client.js` |
+| 圣遗物合计、套装计数、套装效果 | `/api/core/artifact-summary` | `artifact-summary-client.js` |
+| 副词条合法值/档位分解 | `/api/core/substat-rolls` | `substat-rolls-client.js` |
+| 优化器部件形状、喂词条、隐含命中数、结构化请求 | `/api/optimize/artifact/plan` | `artifact-plan-client.js` |
+| 优化问题文本与 CSV 解析 | `/api/optimize/artifact`、`/problem`、`/parse` | `ArtifactOptimize.jsx` 的请求边界 |
+| 配置文件、gcsim、识图解析 | `/api/config/*`、`/api/gcsim/import`、`/api/artifact/scan` | `config-client.js`、`gcsim-client.js`、`artifact-scan-client.js` |
+
+新增数值逻辑时先问：它是否只依赖输入、不依赖 DOM/React 状态？如果是，放进 `server/GsPlan.Core` 并加一个纯函数对拍；React 只做请求、缓存和展示。不要把新的多项式展开、词条枚举或伤害公式写进组件。
+
+---
+
+## 5. 改代码时必须守住的不变量
 
 1. **数字只由 `axis-compute` 推导一次，绝不缓存。** 折叠行、展开卡、底部统计都调同一个函数——历史上三次 bug 都是「一处算、另一处读陈旧副本」。`lib/damage.js` 也被抽成纯函数，`DamageCard` 与轴共用同一实现。
 2. **公式作用域是封闭的。** `$总攻击力` 读的是**折叠任何增益之前**的 panel，所以「攻击力 15%」这类增益不可能自引用。见 `buff-formula.js` 头注释。
@@ -185,7 +209,7 @@ README 只讲规划器（`planner.html`）；这份文档讲**整个仓库里都
 
 ---
 
-## 5. 复用指南
+## 6. 复用指南
 
 - `DamageCard`：传 `char`/`characterId`/`charName`、`sources`、`statDefs`、`injectedTotals`（已折叠好的面板总量）、`injectedBuffs`（外部增益实例）、`onSummary`、`className`。不传则用奥黛塔默认值。
 - `BuffCard`：传 `source`（`{ kind, ... }`）、`onBuffsChange`、`onSourceChange` 等。一个 `source` 对应一张卡，卡里 `buffs` 是 1..n 行 `{ key, value, tag }`。
@@ -193,7 +217,7 @@ README 只讲规划器（`planner.html`）；这份文档讲**整个仓库里都
 
 ---
 
-## 6. 维护页各自产出什么
+## 7. 维护页各自产出什么
 
 | 页面 | 读取 | 回写 |
 | --- | --- | --- |
@@ -205,9 +229,9 @@ localStorage key 一览：`lunaris-axes`（轴，旧 `lunaris-rotation` 会自�
 
 ---
 
-## 7. 检查脚本（`tests/`，入库）
+## 8. 检查脚本（`tests/`，入库）
 
-39 个 `check-*.mjs`（25 纯函数 + 14 浏览器）。它们原本在 `scratch/`（不入库），现在连同最小 fixture 一起提交了，
+62 个 `check-*.mjs`（44 纯函数 + 18 浏览器）。它们原本在 `scratch/`（不入库），现在连同最小 fixture 一起提交了，
 跑法与各脚本的职责见 [tests/README.md](../tests/README.md)：
 
 ```bash
@@ -224,7 +248,7 @@ npm run test:browser   # 浏览器检查：Playwright 驱动本机 Chrome（先 
 
 ---
 
-## 8. 原站复现的坑
+## 9. 原站复现的坑
 
 - **卡片动画**：实测值写死在 `CharacterCard.jsx`/`CharacterArt.jsx`，改动前先截图对照原站。
 - **命名 group**：Tailwind 的 `group`/`group-hover` 不能嵌套同名，父卡 hover 会连带触发子卡样式。

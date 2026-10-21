@@ -332,6 +332,19 @@ try {
   const preciseActual = await post(base, '/api/core/derive-panel', preciseInput);
   comparePanel('panel: compact factors + weapon + artifacts', preciseExpected, preciseActual);
 
+  // The optimizer strips substats by leaving null PLACEHOLDERS, not by deleting
+  // the list. A null slot must contribute nothing, exactly like the JS loop.
+  const strippedInput = {
+    ...preciseInput,
+    artifacts: {
+      ...artifacts,
+      flower: { ...artifacts.flower, subStats: [null, null, null, null] },
+    },
+  };
+  const strippedExpected = derivePanel({ ...strippedInput, stats: statsCompact });
+  const strippedActual = await post(base, '/api/core/derive-panel', strippedInput);
+  comparePanel('panel: null substat slots are ignored', strippedExpected, strippedActual);
+
   const fallbackInput = {
     charId: 'fallback-character', detail: fallbackDetail, level: 95, element: 'Anemo',
     weaponId: 'fallback-weapon',

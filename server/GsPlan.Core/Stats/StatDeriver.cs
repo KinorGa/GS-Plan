@@ -232,7 +232,7 @@ public static partial class StatDeriver
 
             foreach (var sub in piece.SubStats ?? [])
             {
-                if (string.IsNullOrEmpty(sub.Key)) continue;
+                if (sub is null || string.IsNullOrEmpty(sub.Key)) continue;
                 var value = ParseSubstatValue(sub.Value);
                 if (double.IsFinite(value)) Add(ArtifactKeyToPanel(sub.Key), value);
             }

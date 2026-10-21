@@ -47,6 +47,11 @@ public static class CoreEndpoints
         public string? Mode { get; set; }
     }
 
+    private sealed class ArtifactSummaryRequest
+    {
+        public Dictionary<string, ArtifactPiece>? Build { get; set; }
+    }
+
     public static IEndpointRouteBuilder MapCoreEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet("/api/core/meta", (HttpContext context) => ApiResults.Json(context, new
@@ -58,10 +63,14 @@ public static class CoreEndpoints
             batchDerivePanel = true,
             axis = true,
             mergedExpression = true,
+            mergedEvaluation = true,
+            substatRolls = true,
             artifactOptimize = true,
             configTransfer = true,
             gcsimImport = true,
             artifactScan = true,
+            artifactSummary = true,
+            artifactPlan = true,
             buffFormula = true,
             maxBatchItems = MaxBatchItems,
         }));
@@ -164,6 +173,24 @@ public static class CoreEndpoints
                 error = result.Error,
                 unknown = result.Unknown,
             });
+        });
+
+        app.MapPost("/api/core/artifact-summary", async (HttpContext context) =>
+        {
+            var body = await ReadBodyAsync(context);
+            if (body.Error is not null) return body.Error;
+
+            ArtifactSummaryRequest? request;
+            try
+            {
+                request = JsonSerializer.Deserialize<ArtifactSummaryRequest>(body.Text!, JsonOptions);
+            }
+            catch (JsonException)
+            {
+                return ApiResults.Json(context, new { error = "body is not JSON" }, StatusCodes.Status400BadRequest);
+            }
+
+            return ApiResults.Json(context, ArtifactSummary.Compute(request?.Build));
         });
 
         app.MapPost("/api/core/derive-panel", async (HttpContext context, StatsCatalog catalog) =>
@@ -343,6 +370,81 @@ public static class CoreEndpoints
             {
                 return ApiResults.Json(context, new { error = ex.Message }, StatusCodes.Status500InternalServerError);
             }
+        });
+
+        app.MapPost("/api/core/merged-evaluate", async (HttpContext context) =>
+        {
+            var body = await ReadBodyAsync(context);
+            if (body.Error is not null) return body.Error;
+
+            MergedEvaluationRequest? request;
+            try
+            {
+                request = JsonSerializer.Deserialize<MergedEvaluationRequest>(body.Text!, JsonOptions);
+            }
+            catch (JsonException)
+            {
+                return ApiResults.Json(context, new { error = "body is not JSON" }, StatusCodes.Status400BadRequest);
+            }
+            if (request?.Expr is null)
+            {
+                return ApiResults.Json(context, new { error = "expr is required" }, StatusCodes.Status400BadRequest);
+            }
+
+            try
+            {
+                return ApiResults.Json(context, MergedExpressionEvaluator.Evaluate(request));
+            }
+            catch (Exception ex)
+            {
+                return ApiResults.Json(context, new { error = ex.Message }, StatusCodes.Status500InternalServerError);
+            }
+        });
+
+        app.MapPost("/api/core/substat-rolls", async (HttpContext context) =>
+        {
+            var body = await ReadBodyAsync(context);
+            if (body.Error is not null) return body.Error;
+
+            SubstatRollsRequest? request;
+            try
+            {
+                request = JsonSerializer.Deserialize<SubstatRollsRequest>(body.Text!, JsonOptions);
+            }
+            catch (JsonException)
+            {
+                return ApiResults.Json(context, new { error = "body is not JSON" }, StatusCodes.Status400BadRequest);
+            }
+            request ??= new SubstatRollsRequest();
+            if (request.Rarity is < 1 or > 5)
+            {
+                return ApiResults.Json(context, new { error = "rarity must be 1..5" }, StatusCodes.Status400BadRequest);
+            }
+
+            var known = SubstatRolls.KeysFor(request.Rarity);
+            var keys = request.Keys is { Count: > 0 } ? request.Keys : known.ToList();
+            if (keys.Count > 32)
+            {
+                return ApiResults.Json(context, new { error = "at most 32 keys are allowed" }, StatusCodes.Status400BadRequest);
+            }
+
+            var stats = new Dictionary<string, SubstatRollTable>(StringComparer.Ordinal);
+            foreach (var key in keys.Distinct(StringComparer.Ordinal))
+            {
+                var totals = SubstatRolls.Totals(key, request.Rarity);
+                if (totals is null) continue;
+                stats[key] = new SubstatRollTable
+                {
+                    Tiers = SubstatRolls.TierValues(key, request.Rarity)?.ToList() ?? [],
+                    Totals = totals.ToList(),
+                };
+            }
+            return ApiResults.Json(context, new SubstatRollsResult
+            {
+                Rarity = request.Rarity,
+                MaxRolls = SubstatRolls.MaxRollsFor(request.Rarity),
+                Stats = stats,
+            });
         });
 
         return app;

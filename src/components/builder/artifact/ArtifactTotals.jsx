@@ -22,10 +22,10 @@ import {
 } from '../../../lib/artifact';
 import { StatGlyph } from './StatGlyph';
 
-export default function ArtifactTotals({ build }) {
+export default function ArtifactTotals({ build, totals: providedTotals }) {
   const { L } = useI18n();
 
-  const totals = artifactStatTotals(build);
+  const totals = providedTotals || artifactStatTotals(build);
   // TOTAL_ORDER first, then anything a future key added that the order does not
   // yet name -- so a new stat shows up rather than silently disappearing. Sorted
   // so the tail is stable instead of insertion-ordered.

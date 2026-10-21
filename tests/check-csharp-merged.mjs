@@ -7,7 +7,9 @@ import net from 'node:net';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { mergedExpression } from '../src/lib/merged-expression.js';
+import {
+  damageAt, evaluate, evaluateAmp, mergedExpression, variablesOf,
+} from '../src/lib/merged-expression.js';
 import { activeArtifacts } from '../src/lib/artifact-sets.js';
 import { mergedExpressionRequest } from '../src/lib/axis-request.js';
 
@@ -146,6 +148,48 @@ const compareExpression = (name, expected, actual) => {
       === JSON.stringify((actual.warnings || []).map((w) => [w.code, (w.keys || []).slice().sort()])));
 };
 
+const evaluateInJs = (expr, panel) => {
+  const variables = variablesOf(panel);
+  const at = damageAt(expr, variables);
+  const rate = variables.R;
+  return {
+    variables,
+    never: at.never,
+    crit: at.crit,
+    avg: at.avg,
+    groups: expr.coeffs.avgGroups.map((group) => {
+      const mu = Math.min(rate + group.crBuff, 100) / 100;
+      const delta = evaluate(group.delta, variables);
+      const amp = evaluateAmp(group.amp, variables);
+      const df = delta + amp;
+      return { crBuff: group.crBuff, mu, delta, amp, df, contrib: mu * df };
+    }),
+  };
+};
+
+const compareEvaluation = (name, expected, actual) => {
+  compareDict(name + ': variables', expected.variables, actual?.variables);
+  ok(name + ': totals',
+    nearlyEqual(expected.never, actual?.never)
+      && nearlyEqual(expected.crit, actual?.crit)
+      && nearlyEqual(expected.avg, actual?.avg),
+    `${expected.never}/${expected.crit}/${expected.avg} != ${actual?.never}/${actual?.crit}/${actual?.avg}`);
+  ok(name + ': group count',
+    expected.groups.length === (actual?.groups?.length || 0),
+    `${expected.groups.length} != ${actual?.groups?.length || 0}`);
+  expected.groups.forEach((group, index) => {
+    const other = actual?.groups?.[index] || {};
+    ok(`${name}: group ${index}`,
+      nearlyEqual(group.crBuff, other.crBuff)
+        && nearlyEqual(group.mu, other.mu)
+        && nearlyEqual(group.delta, other.delta)
+        && nearlyEqual(group.amp, other.amp)
+        && nearlyEqual(group.df, other.df)
+        && nearlyEqual(group.contrib, other.contrib),
+      JSON.stringify(group) + ' != ' + JSON.stringify(other));
+  });
+};
+
 const config = read('data/lunaris-config-2026-10-07.json');
 const charlist = read('public/data/charlist.json');
 const weapons = read('public/data/weaponlist.json');
@@ -249,7 +293,8 @@ try {
   await waitFor(baseUrl + '/api/health');
 
   const meta = await fetch(baseUrl + '/api/core/meta').then((response) => response.json());
-  ok('merged: meta advertises the route', meta.service === 'gs-plan-core' && meta.mergedExpression === true);
+  ok('merged: meta advertises the routes',
+    meta.service === 'gs-plan-core' && meta.mergedExpression === true && meta.mergedEvaluation === true);
 
   for (const item of cases) {
     const expected = mergedExpression({
@@ -265,7 +310,42 @@ try {
       mergedExpressionRequest(item.entries, team, charId, 'chs')
     );
     compareExpression(item.name, expected, actual);
+
+    const panels = [
+      ['base', actual.base],
+      ['shifted panel', {
+        ...actual.base,
+        atkPct: actual.base.atkPct + 38,
+        flatAtk: actual.base.flatAtk + 120,
+        hpPct: (actual.base.hpPct || 0) + 20,
+        defPct: (actual.base.defPct || 0) + 15,
+        critRate: Math.min(100, actual.base.critRate + 23),
+        critDmg: actual.base.critDmg + 44,
+        dmgBonus: actual.base.dmgBonus + 18,
+        em: (actual.base.em || 0) + 160,
+      }],
+    ];
+    for (const [label, panel] of panels) {
+      const jsEvaluation = evaluateInJs(actual, panel);
+      const csEvaluation = await post(
+        baseUrl,
+        '/api/core/merged-evaluate',
+        { expr: actual, panel }
+      );
+      compareEvaluation(item.name + ': ' + label, jsEvaluation, csEvaluation);
+    }
   }
+
+  const missingExpr = await fetch(baseUrl + '/api/core/merged-evaluate', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+  });
+  ok('merged evaluation: missing expr is 400', missingExpr.status === 400);
+  const badEvalJson = await fetch(baseUrl + '/api/core/merged-evaluate', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{bad',
+  });
+  ok('merged evaluation: invalid JSON is 400', badEvalJson.status === 400);
+  const wrongEvalMethod = await fetch(baseUrl + '/api/core/merged-evaluate');
+  ok('merged evaluation: unsupported method is 405', wrongEvalMethod.status === 405);
 
   const badJson = await fetch(baseUrl + '/api/core/merged-expression', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{bad',

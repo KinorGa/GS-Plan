@@ -44,11 +44,15 @@ import {
   feedingSubstatsFor, impliedHits, importPieces, monoFactors, parseResult, pieceSpec,
   scalingBasesOf, stripSubstats,
 } from '../../../lib/artifact-optimize';
+import { artifactPlanRequest, planArtifactOptimize } from '../../../lib/artifact-plan-client';
 import {
-  damageAt, evaluate, evaluateAmp, mergedExpression, panelOf, variablesOf,
+  damageAt, evaluate, evaluateAmp, mergedExpression, panelFromValues, panelOf, variablesOf,
 } from '../../../lib/merged-expression';
+import { useMergedEvaluation } from '../../../lib/merged-evaluate-client';
 import { mergedExpressionRequest } from '../../../lib/axis-request';
-import { coreAvailable, useCoreMergedExpression } from '../../../lib/core-client';
+import {
+  coreAvailable, useCoreDerivedPanel, useCoreMergedExpression,
+} from '../../../lib/core-client';
 import { SCALING_SYMBOL } from '../../../lib/damage';
 import { StatGlyph, StatMenu } from './StatGlyph';
 
@@ -75,6 +79,22 @@ const fmtMs = (ms) => (ms == null
 /** Whether the build on screen actually wears any substats. */
 const wornSubstats = (build) =>
   SLOTS.some(({ key }) => (build?.[key]?.subStats || []).some((s) => s?.key));
+
+/** Package a unit for the C# derive-panel route; display data stays local. */
+const deriveRequestOf = (team, catalogue, charId, artifacts) => {
+  const unit = (team || []).find((u) => u.id === charId);
+  if (!unit?.detail) return null;
+  return {
+    charId,
+    detail: catalogue?.stats ? null : unit.detail,
+    level: unit.level,
+    element: unit.element,
+    weaponId: unit.weaponId ?? null,
+    weapon: unit.weaponId ? catalogue?.weapons?.[unit.weaponId] || null : null,
+    artifacts: artifacts ?? unit.artifacts,
+    useStats: true,
+  };
+};
 
 export default function ArtifactOptimize({ charId, build, optimize }) {
   const [open, setOpen] = useState(false);
@@ -141,15 +161,29 @@ function OptimizeDialog({ charId, build, optimize, onClose }) {
   const showEm = useMemo(() => emMattersIn(expr), [expr]);
 
   /** The panel without substats: the search's starting point. */
-  const basePanel = useMemo(
+  const localBasePanel = useMemo(
     () => panelOf(optimize.team, optimize.catalogue, charId, stripSubstats(build)),
     [optimize, charId, build]
   );
   /** The panel AS WORN, at full value: the starting point for the comparison. */
-  const curPanel = useMemo(
+  const localCurPanel = useMemo(
     () => panelOf(optimize.team, optimize.catalogue, charId),
     [optimize, charId]
   );
+  const basePanelRequest = useMemo(
+    () => deriveRequestOf(optimize.team, optimize.catalogue, charId, stripSubstats(build)),
+    [optimize, charId, build]
+  );
+  const curPanelRequest = useMemo(
+    () => deriveRequestOf(optimize.team, optimize.catalogue, charId),
+    [optimize, charId]
+  );
+  const baseFallback = useMemo(() => ({ values: localBasePanel }), [localBasePanel]);
+  const curFallback = useMemo(() => ({ values: localCurPanel }), [localCurPanel]);
+  const baseDerived = useCoreDerivedPanel(basePanelRequest, baseFallback);
+  const curDerived = useCoreDerivedPanel(curPanelRequest, curFallback);
+  const basePanel = useMemo(() => panelFromValues(baseDerived?.values), [baseDerived]);
+  const curPanel = useMemo(() => panelFromValues(curDerived?.values), [curDerived]);
 
   const [hitScale, setHitScale] = useState(DEFAULT_HIT_SCALE);
   const [upgrades, setUpgrades] = useState(UPGRADES_DEFAULT);
@@ -159,6 +193,9 @@ function OptimizeDialog({ charId, build, optimize, onClose }) {
   const [pieces, setPieces] = useState(() => (
     wornSubstats(build) ? importPieces(build) : defaultPieces(build)
   ));
+  const planTouched = useRef(false);
+  const [planInfo, setPlanInfo] = useState(null);
+  const planMode = useMemo(() => (wornSubstats(build) ? 'import' : 'default'), [build]);
 
   const [running, setRunning] = useState(false);
   const [error, setError] = useState(null);
@@ -175,13 +212,48 @@ function OptimizeDialog({ charId, build, optimize, onClose }) {
   }, [onClose]);
 
   /**
+   * The C# planner is the authority for the initial piece shapes and the
+   * derived hit count. The local piece state stays synchronous so the cards
+   * appear immediately and continue to work on the Node dev server; until the
+   * first edit, the C# plan replaces that first paint in place.
+   */
+  useEffect(() => {
+    if (!expr || !basePanel || !curPanel) return undefined;
+    let alive = true;
+    const request = artifactPlanRequest({
+      expr,
+      build,
+      basePanel,
+      currentPanel: curPanel,
+      mode: planMode,
+      upgrades,
+      hitScale,
+    });
+    planArtifactOptimize(request)
+      .then((plan) => {
+        if (!alive || !plan) return;
+        setPlanInfo(plan);
+        if (!planTouched.current && Array.isArray(plan.pieces)) setPieces(plan.pieces);
+      })
+      .catch(() => {
+        // The local planner is already on screen; a missing service is not an
+        // error banner.
+      });
+    return () => { alive = false; };
+  }, [expr, basePanel, curPanel, build, planMode, upgrades, hitScale]);
+
+  /**
    * A parameter setter that ALSO drops the previous run.
    *
    * A result belongs to the parameters that produced it. Leaving a table on screen
    * after a card changed means the table and the cards describe different searches,
    * and the table is the one that looks authoritative.
    */
-  const replace = (next) => { setPieces(next); setResult(null); };
+  const replace = (next) => {
+    planTouched.current = true;
+    setPieces(next);
+    setResult(null);
+  };
   const patch = (index, piece) =>
     replace(pieces.map((p, i) => (i === index ? piece : p)));
 
@@ -240,25 +312,31 @@ function OptimizeDialog({ charId, build, optimize, onClose }) {
       // The old text route stays as the fallback for the Node dev server.
       if (await coreAvailable()) {
         try {
-          const res = await fetch('/api/optimize/artifact', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-            body: JSON.stringify(artifactOptimizeRequest({
-              expr,
-              panel: basePanel,
-              ref,
-              pieces,
-              hitScale,
-            })),
-          });
-          const type = res.headers.get('content-type') || '';
-          if (res.ok && type.includes('application/json')) {
-            structured = await res.json();
-          } else if (res.status !== 404 && res.status !== 405) {
-            const text = await res.text();
-            let message = text;
-            try { message = JSON.parse(text).error || text; } catch { /* plain text */ }
-            throw new Error(message);
+          const plan = await planArtifactOptimize(artifactPlanRequest({
+            expr,
+            build,
+            basePanel,
+            currentPanel: curPanel,
+            pieces,
+            mode: planMode,
+            upgrades,
+            hitScale,
+          }));
+          if (plan?.request) {
+            const res = await fetch('/api/optimize/artifact', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+              body: JSON.stringify(plan.request),
+            });
+            const type = res.headers.get('content-type') || '';
+            if (res.ok && type.includes('application/json')) {
+              structured = await res.json();
+            } else if (res.status !== 404 && res.status !== 405) {
+              const text = await res.text();
+              let message = text;
+              try { message = JSON.parse(text).error || text; } catch { /* plain text */ }
+              throw new Error(message);
+            }
           }
         } catch (error) {
           // A missing/unreachable structured route is a fallback, not an error
@@ -324,7 +402,7 @@ function OptimizeDialog({ charId, build, optimize, onClose }) {
   const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE));
   const view = sorted.slice(page * PAGE, page * PAGE + PAGE);
   const worn = curPanel
-    ? impliedHits(basePanel, curPanel, feedingSubstatsFor(expr))
+    ? (planInfo?.impliedHits ?? impliedHits(basePanel, curPanel, feedingSubstatsFor(expr)))
     : 0;
 
   return createPortal(
@@ -974,10 +1052,10 @@ const BASE_MOVABLE = new Set(['A', 'C', 'R']);
 const fmtCoef = (x) => Number(Number(x).toPrecision(6)).toLocaleString('en-US');
 
 /** The used scaling values of a panel, as `A=...`, `H=...`, ... */
-const panelText = (panel, symbols) => {
+const panelText = (panel, symbols, values) => {
   if (!panel) return '-';
-  const values = variablesOf(panel);
-  return symbols.map((sym) => sym + '=' + fmt(values[sym])).join(' , ');
+  const vars = values || variablesOf(panel);
+  return symbols.map((sym) => sym + '=' + fmt(vars[sym])).join(' , ');
 };
 
 /** One panel quantity: its glyph, its name, and whether the search can move it. */
@@ -1067,21 +1145,38 @@ function Expression({ expr, basePanel, curPanel, L, panelSymbols }) {
   const emMatters = emMattersIn(expr);
   const movableSet = new Set(['C', 'R', ...panelSymbols, ...(emMatters ? ['E'] : [])]);
   // The panel's own variables AT THE WORN BUILD, so the master formula can be
-  // shown as ARITHMETIC and not just as symbols: the weights and the per-group
-  // contributions are what turn the abstract Sigma into something checkable.
-  const cv = curPanel ? variablesOf(curPanel) : null;
-  const R = cv ? cv.R : 0;
-  const at = cv ? damageAt(expr, cv) : null;
-  const neverVal = at?.never ?? null;
-  const critVal = at?.crit ?? null;
+  // shown as ARITHMETIC and not just as symbols. C# evaluates this arithmetic
+  // when the service is present; the JS copy is the synchronous first paint.
+  const localEvaluation = useMemo(() => {
+    if (!curPanel) return null;
+    const variables = variablesOf(curPanel);
+    const at = damageAt(expr, variables);
+    const groups = expr.coeffs.avgGroups.map((g) => {
+      const mu = Math.min(variables.R + g.crBuff, 100) / 100;
+      const delta = evaluate(g.delta, variables);
+      const amp = evaluateAmp(g.amp, variables);
+      const df = delta + amp;
+      return { crBuff: g.crBuff, mu, delta, amp, df, contrib: mu * df };
+    });
+    return { variables, never: at.never, crit: at.crit, avg: at.avg, groups };
+  }, [expr, curPanel]);
+  const evaluation = useMergedEvaluation(expr, curPanel, localEvaluation);
+  const cv = evaluation?.variables ?? null;
+  const neverVal = evaluation?.never ?? null;
+  const critVal = evaluation?.crit ?? null;
+  const avgVal = evaluation?.avg ?? null;
+  const evaluatedGroups = new Map(
+    (evaluation?.groups || []).map((g) => [g.crBuff, g])
+  );
   const groupVals = expr.coeffs.avgGroups.map((g) => {
-    const mu = Math.min(R + g.crBuff, 100) / 100;
-    const baseDelta = cv ? evaluate(g.delta, cv) : null;
-    const ampDelta = cv ? evaluateAmp(g.amp, cv) : null;
-    const df = cv ? baseDelta + ampDelta : null;
-    return { ...g, mu, df, contrib: cv ? mu * df : null };
+    const values = evaluatedGroups.get(g.crBuff);
+    return {
+      ...g,
+      mu: values?.mu ?? 0,
+      df: values?.df ?? null,
+      contrib: values?.contrib ?? null,
+    };
   });
-  const avgVal = at?.avg ?? null;
   return (
     <details open className="mt-3 rounded-xl border border-white/[0.07] bg-white/[0.02] p-3">
       <summary className="cursor-pointer text-[11px] font-bold text-white/80">
@@ -1314,11 +1409,11 @@ function Expression({ expr, basePanel, curPanel, L, panelSymbols }) {
       <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-0.5 text-[10px] text-white/45">
         <div>
           {L({ chs: '搜索基线（去掉副词条）', en: 'Search baseline (substats removed)' })}
-          {': ' + panelText(basePanel, panelSymbols) + ' , 暴击率=' + fmt(basePanel?.critRate, 2) + '% , 暴伤=' + fmt(basePanel?.critDmg, 2) + '%'}
+          {': ' + panelText(basePanel, panelSymbols, expr.variables) + ' , 暴击率=' + fmt(basePanel?.critRate, 2) + '% , 暴伤=' + fmt(basePanel?.critDmg, 2) + '%'}
         </div>
         <div>
           {L({ chs: '当前面板', en: 'Current panel' })}
-          {': ' + panelText(curPanel, panelSymbols) + ' , 暴击率=' + fmt(curPanel?.critRate, 2) + '% , 暴伤=' + fmt(curPanel?.critDmg, 2) + '%'}
+          {': ' + panelText(curPanel, panelSymbols, cv) + ' , 暴击率=' + fmt(curPanel?.critRate, 2) + '% , 暴伤=' + fmt(curPanel?.critDmg, 2) + '%'}
         </div>
       </div>
     </details>

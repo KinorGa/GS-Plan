@@ -60,8 +60,12 @@ published, put `dist/` beside the executable or set `GsPlan:RepoRoot`.
 - `POST /api/core/derive-panel-batch`
 - `POST /api/core/axis`
 - `POST /api/core/merged-expression`
+- `POST /api/core/merged-evaluate`
+- `POST /api/core/substat-rolls`
+- `POST /api/core/artifact-summary`
 - `POST /api/core/formula`
 - `POST /api/artifact/scan`
+- `POST /api/optimize/artifact/plan`
 - Static `dist/` files with SPA fallback
 
 `GsPlan.Core` is the C# port of `src/lib/damage.js`, `stat-derive.js`,
@@ -85,6 +89,19 @@ it through `src/lib/core-client.js`:
   `POST /api/core/merged-expression`. It reads the same damage rows and buffs
   as the axis, so a coefficient cannot come from a second interpretation of the
   formula.
+- `POST /api/core/merged-evaluate` evaluates that polynomial at a panel: it
+  converts panel stats to `A/H/D/M/U/P/G/C/R/E`, returns the never/crit/expected
+  totals, and returns each CRIT-Rate-buff group's `mu`, `delta`, `amp` and
+  contribution. React formats these numbers; it does not re-expand the terms.
+- `POST /api/core/substat-rolls` owns the legal substat table: exact four-tier
+  values, every reachable total, and every tier multiset that produces it. The
+  editor's picker and the screenshot validator share this implementation.
+- `POST /api/core/artifact-summary` owns artifact stat totals, set counts and
+  active set bonuses. `POST /api/optimize/artifact/plan` owns the initial piece
+  shapes, feeding substats, implied hits and the structured optimizer request.
+  The browser modules `artifact-summary-client.js`, `artifact-plan-client.js`,
+  `merged-evaluate-client.js` and `substat-rolls-client.js` only cache and adapt
+  these responses; their synchronous JS result is the first paint/fallback.
 - `POST /api/core/formula` exposes the same tokenizer, symbol scope and error
   positions the axis uses, so a formula can be validated without computing a
   whole axis. `POST /api/artifact/scan` maps a vision model's text reply to the
@@ -100,7 +117,10 @@ resolution, and `tests/check-csharp-artifact-scan.mjs` compares the screenshot
 parser, including malformed replies and method handling.
 `tests/check-csharp-merged.mjs` compares the merged artifact polynomial,
 including amplifying and transformative terms, alternative scaling stats and
-rotation segments. `tests/check-core-client.mjs` verifies the real browser
+rotation segments, and compares the evaluator's variables, totals and CRIT-rate
+groups at both the base and a shifted panel. `tests/check-csharp-substat.mjs`
+compares every legal total and tier decomposition at 3/4/5 stars.
+`tests/check-core-client.mjs` verifies the real browser
 switch and the no-Core fallback.
 `tests/check-csharp-optimize.mjs` compares the structured artifact optimizer's
 problem text and CSV parser with the JS implementation, including a real merged
@@ -109,6 +129,9 @@ expression and an end-to-end run when `optimize.exe` is built.
 file boundary, including the legacy bare-team document, old artifact builds,
 pool identity, `enemyRes` migration, the real 1.8 MB imported rotation and a
 byte-for-byte pretty-printed export.
+`tests/check-csharp-artifact-tools.mjs` compares artifact summaries and the
+optimizer planner, including imported/default/custom piece shapes and the
+structured request.
 
 The artifact optimiser text protocol now lives in
 `GsPlan.Core.Artifacts.ArtifactOptimizeCalculator`. The browser sends the
