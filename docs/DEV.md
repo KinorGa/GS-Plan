@@ -108,6 +108,7 @@ README 只讲规划器（`planner.html`）；这份文档讲**整个仓库里都
   - `stat-derive.js` — 由角色/武器/圣遗物推导 panel（`DERIVED_KEYS`）。
   - `stat-meta.js`、`stat-tables.js` — 字段元数据；读 `stats-compact.json` 的因子表。
   - `buff-formula.js` — 增益公式引擎：符号表、递归下降解析、求值、`$` 补全（`scopeForUnit`）。**不用 `eval`**。
+    C# 的 `BuffFormula.cs` 是同一套语法/符号/错误的移植，轴计算已改用它；`/api/core/formula` 供对拍与后续服务端校验。
   - `axis-compute.js` — `computeAxis`/`computeEntry`/`panelForEntry`，整条轴的唯一推导入口。
   - `damage.js` — `computeDamage`/`dmgBonusFor`/`resMultiplier`/`enemyResKey`/`resShredKey`。
   - `bulk-apply.js` — 统一设置的批量应用与回复。
@@ -124,6 +125,7 @@ README 只讲规划器（`planner.html`）；这份文档讲**整个仓库里都
     所以有一张表可以被测试读、也能被用户在校对表里逐行核对。两条最容易写错的规则写在文件头：
     副词条**按游戏显示值**比较合法性（`攻击力+19` 其实是 19.45），主词条的固定值/百分比**由部位判定**
     （详情面板自己的标题行不写 `%`）。
+  - `artifact-scan-client.js` — 页面到 C# `/api/artifact/scan` 的边界：4xx 原样报错，404/405/网络/5xx 退回上面的 JS 解析。
   - `vision-client.js` — 一次请求：先走本项目 `/api/vision` 转发（OpenAI 兼容接口不给浏览器 CORS），
     没有转发时直连模型（本地模型可以，且不带 Key）。请求体里只有**环境变量名**，密钥从头到尾不在页面上；
     `probeKeyEnv` 问转发服务「读得到这个变量吗」，面板把答案印在输入框下面。**自身没有 import**，

@@ -44,8 +44,9 @@ import {
   MAIN_STATS, SLOT_LABEL, SUB_STATS, formatStat, pieceIcon, statMeta,
 } from '../../../lib/artifact';
 import {
-  SCAN_PROMPT, applyScanRows, buildScanRows, matchDisplayed, parseScanResponse,
+  SCAN_PROMPT, applyScanRows, matchDisplayed,
 } from '../../../lib/artifact-scan';
+import { scanArtifactReply } from '../../../lib/artifact-scan-client';
 import { hasVisionConfig, loadVisionConfig, saveVisionConfig } from '../../../lib/vision-config';
 import { probeKeyEnv, recognizeArtifacts } from '../../../lib/vision-client';
 import { NumberStepper, PickerModal } from '../controls';
@@ -95,7 +96,7 @@ const kBOf = (dataUrl) =>
  * @param {Function} onApply  Called with a whole new build.
  */
 export default function ArtifactScan({ build, sets, list, onApply }) {
-  const { L } = useI18n();
+  const { lang, L } = useI18n();
   const [open, setOpen] = useState(false);
   const [config, setConfig] = useState(loadVisionConfig);
   const [image, setImage] = useState(null);
@@ -166,8 +167,7 @@ export default function ArtifactScan({ build, sets, list, onApply }) {
         config, image: image.dataUrl, prompt: SCAN_PROMPT,
       });
       setReply({ text, via });
-      const parsed = parseScanResponse(text);
-      const built = buildScanRows(parsed, { list, sets });
+      const built = await scanArtifactReply(text, { lang, list, sets });
       if (!built.length) {
         setError(L({ chs: '这张图里没识别到圣遗物', en: 'No artifacts were found in that image' }));
         setRows(null);

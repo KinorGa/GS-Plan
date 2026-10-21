@@ -40,6 +40,13 @@ public static class CoreEndpoints
         public List<DerivePanelInput>? Requests { get; set; }
     }
 
+    private sealed class FormulaRequest
+    {
+        public string? Text { get; set; }
+        public Dictionary<string, double>? Scope { get; set; }
+        public string? Mode { get; set; }
+    }
+
     public static IEndpointRouteBuilder MapCoreEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet("/api/core/meta", (HttpContext context) => ApiResults.Json(context, new
@@ -54,6 +61,8 @@ public static class CoreEndpoints
             artifactOptimize = true,
             configTransfer = true,
             gcsimImport = true,
+            artifactScan = true,
+            buffFormula = true,
             maxBatchItems = MaxBatchItems,
         }));
 
@@ -118,6 +127,43 @@ public static class CoreEndpoints
                 results.Add(ComputeDamage(item));
             }
             return ApiResults.Json(context, new { results });
+        });
+
+        app.MapPost("/api/core/formula", async (HttpContext context) =>
+        {
+            var body = await ReadBodyAsync(context);
+            if (body.Error is not null) return body.Error;
+
+            FormulaRequest? request;
+            try
+            {
+                request = JsonSerializer.Deserialize<FormulaRequest>(body.Text!, JsonOptions);
+            }
+            catch (JsonException)
+            {
+                return ApiResults.Json(context, new { error = "body is not JSON" }, StatusCodes.Status400BadRequest);
+            }
+
+            if (string.Equals(request?.Mode, "analyse", StringComparison.OrdinalIgnoreCase))
+            {
+                var analysis = BuffFormula.Analyse(request?.Text);
+                return ApiResults.Json(context, new
+                {
+                    ok = analysis.Ok,
+                    symbols = analysis.Symbols,
+                    error = analysis.Error,
+                    at = analysis.At,
+                });
+            }
+
+            var result = BuffFormula.Resolve(request?.Text, request?.Scope);
+            return ApiResults.Json(context, new
+            {
+                ok = result.Ok,
+                value = result.Value,
+                error = result.Error,
+                unknown = result.Unknown,
+            });
         });
 
         app.MapPost("/api/core/derive-panel", async (HttpContext context, StatsCatalog catalog) =>

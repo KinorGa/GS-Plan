@@ -60,6 +60,8 @@ published, put `dist/` beside the executable or set `GsPlan:RepoRoot`.
 - `POST /api/core/derive-panel-batch`
 - `POST /api/core/axis`
 - `POST /api/core/merged-expression`
+- `POST /api/core/formula`
+- `POST /api/artifact/scan`
 - Static `dist/` files with SPA fallback
 
 `GsPlan.Core` is the C# port of `src/lib/damage.js`, `stat-derive.js`,
@@ -83,12 +85,19 @@ it through `src/lib/core-client.js`:
   `POST /api/core/merged-expression`. It reads the same damage rows and buffs
   as the axis, so a coefficient cannot come from a second interpretation of the
   formula.
+- `POST /api/core/formula` exposes the same tokenizer, symbol scope and error
+  positions the axis uses, so a formula can be validated without computing a
+  whole axis. `POST /api/artifact/scan` maps a vision model's text reply to the
+  same artifact review rows as the browser parser.
 - `localStorage.gsplan.core = 'js'` forces the JS path; `'core'` makes the intent
   explicit; removing the key restores automatic detection.
 
 `tests/check-csharp-core.mjs` compares every single and batch result field with
 the JS implementation. `tests/check-csharp-axis.mjs` compares complete axes,
 entry parts, buff formulas and custom zones against the JS implementation.
+`tests/check-csharp-formula.mjs` compares the formula parser's analysis and
+resolution, and `tests/check-csharp-artifact-scan.mjs` compares the screenshot
+parser, including malformed replies and method handling.
 `tests/check-csharp-merged.mjs` compares the merged artifact polynomial,
 including amplifying and transformative terms, alternative scaling stats and
 rotation segments. `tests/check-core-client.mjs` verifies the real browser
